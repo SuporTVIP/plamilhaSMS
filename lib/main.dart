@@ -3,6 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'core/theme.dart';
 import 'services/auth_service.dart';
 import 'login_screen.dart'; // Importa a tela neon
+import 'models/alert.dart';
+import 'services/alert_service.dart';
 
 void main() {
   runApp(const MilhasAlertApp());
@@ -106,13 +108,205 @@ class _MainNavigatorState extends State<MainNavigator> {
 }
 
 // --- PLACEHOLDERS ---
-class AlertsScreen extends StatelessWidget {
+// ==========================================
+// TELA 1: ALERTAS (Feed em Tempo Real)
+// ==========================================
+class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text("✈️ ALERTAS")),
-    body: const Center(child: Text("Feed de Emissões", style: TextStyle(color: AppTheme.muted))),
-  );
+  State<AlertsScreen> createState() => _AlertsScreenState();
+}
+
+class _AlertsScreenState extends State<AlertsScreen> {
+  final AlertService _alertService = AlertService();
+  final List<Alert> _listaAlertas = [];
+  bool _isCarregando = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _iniciarMotorDeTracao();
+  }
+
+  void _iniciarMotorDeTracao() {
+    // 1. Inicia o Polling Dinâmico (Modo Economia Automático)
+    _alertService.startMonitoring();
+
+    // 2. Fica escutando a "Stream" (Tubo de dados) por novos alertas
+    _alertService.alertStream.listen((novosAlertas) {
+      if (mounted) {
+        setState(() {
+          // Adiciona os novos alertas no topo da lista
+          _listaAlertas.insertAll(0, novosAlertas);
+          _isCarregando = false;
+        });
+      }
+    });
+
+    // Timeout de carregamento inicial (se a planilha estiver vazia ou demorar)
+    Future.delayed(const Duration(seconds: 4), () {
+      if (mounted && _isCarregando) {
+        setState(() => _isCarregando = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Quando fechar o app, para o motor para economizar bateria
+    _alertService.stopMonitoring();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("✈️ FEED DE EMISSÕES"),
+        actions: [
+          // O Botão de Filtros que implementaremos no próximo passo
+          IconButton(
+            icon: const Icon(Icons.tune, color: AppTheme.accent),
+            tooltip: "Filtros",
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Filtros em desenvolvimento..."))
+              );
+            },
+          )
+        ],
+      ),
+      body: _isCarregando
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
+          : _listaAlertas.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.airplanemode_off, size: 64, color: AppTheme.border),
+                      const SizedBox(height: 16),
+                      const Text("Nenhuma emissão recente.", style: TextStyle(color: AppTheme.muted)),
+                      const Text("Aguardando o radar...", style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _listaAlertas.length,
+                  itemBuilder: (context, index) {
+                    final alerta = _listaAlertas[index];
+                    return AlertCard(alerta: alerta); // Componente visual do card
+                  },
+                ),
+    );
+  }
+}
+
+// ==========================================
+// COMPONENTE: CARD DO ALERTA (Visual Cyberpunk)
+// ==========================================
+class AlertCard extends StatelessWidget {
+  final Alert alerta;
+  
+  const AlertCard({super.key, required this.alerta});
+
+  @override
+  Widget build(BuildContext context) {
+    // Define a cor da badge de acordo com o programa
+    Color corPrograma = AppTheme.accent;
+    if (alerta.programa.toUpperCase().contains("AZUL")) corPrograma = Colors.lightBlue;
+    if (alerta.programa.toUpperCase().contains("LATAM")) corPrograma = Colors.redAccent;
+    if (alerta.programa.toUpperCase().contains("SMILES")) corPrograma = Colors.orangeAccent;
+
+    // Formata a data (Ex: 14:30)
+    String horaFormatada = "${alerta.data.hour.toString().padLeft(2, '0')}:${alerta.data.minute.toString().padLeft(2, '0')}";
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Cabeçalho do Card (Programa + Hora)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              border: Border(bottom: BorderSide(color: AppTheme.border)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.airplane_ticket, color: corPrograma, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      alerta.programa.toUpperCase(),
+                      style: TextStyle(color: corPrograma, fontWeight: FontWeight.bold, letterSpacing: 1),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time, color: AppTheme.muted, size: 14),
+                    const SizedBox(width: 4),
+                    Text(horaFormatada, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  ],
+                )
+              ],
+            ),
+          ),
+          
+          // Corpo do Card (Mensagem)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              alerta.mensagem,
+              style: const TextStyle(fontSize: 13, height: 1.5, color: AppTheme.text),
+            ),
+          ),
+
+          // Rodapé do Card (Link de Emissão)
+          if (alerta.link != null && alerta.link!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.green,
+                    side: const BorderSide(color: AppTheme.green),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                  ),
+                  icon: const Icon(Icons.link, size: 16),
+                  label: const Text("ABRIR OFERTA"),
+                  onPressed: () {
+                    // Futuramente abriremos a WebView ou Link Externo aqui
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Link copiado/abrindo..."))
+                    );
+                  },
+                ),
+              ),
+            )
+        ],
+      ),
+    );
+  }
 }
 
 class SmsScreen extends StatelessWidget {
