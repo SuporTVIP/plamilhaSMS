@@ -27,6 +27,7 @@ dependencies:
   
   # Rede e Conexão (Legado reaproveitado)
   http: ^1.2.0
+  dio: ^5.4.0
   uuid: ^4.3.3
   shared_preferences: ^2.2.0
   

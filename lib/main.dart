@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // Para animações suaves
 import 'core/theme.dart';
 import 'services/auth_service.dart';
+import 'login_screen.dart'; // Importa a tela neon
 
 void main() {
   runApp(const MilhasAlertApp());
@@ -15,22 +15,129 @@ class MilhasAlertApp extends StatelessWidget {
     return MaterialApp(
       title: 'MilhasAlert',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme, // Usando nosso tema novo
-      home: const DashboardScreen(),
+      theme: AppTheme.darkTheme,
+      home: const SplashRouter(), // O guarda de trânsito
     );
   }
 }
 
-class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+// ==========================================
+// ROTEADOR INICIAL (Verifica se já logou)
+// ==========================================
+class SplashRouter extends StatefulWidget {
+  const SplashRouter({super.key});
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  State<SplashRouter> createState() => _SplashRouterState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _SplashRouterState extends State<SplashRouter> {
+  @override
+  void initState() {
+    super.initState();
+    _checkLogin();
+  }
+
+  void _checkLogin() async {
+    bool firstUse = await AuthService().isFirstUse();
+    
+    // Pequeno delay para a tela não piscar agressivamente
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (mounted) {
+      if (firstUse) {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+      } else {
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigator()));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      body: const Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+    );
+  }
+}
+
+// ==========================================
+// CONTROLADOR DE NAVEGAÇÃO (As 3 Abas)
+// ==========================================
+class MainNavigator extends StatefulWidget {
+  const MainNavigator({super.key});
+
+  @override
+  State<MainNavigator> createState() => _MainNavigatorState();
+}
+
+class _MainNavigatorState extends State<MainNavigator> {
+  int _currentIndex = 1; // Começa na Licença
+
+  final List<Widget> _screens = [
+    const AlertsScreen(),
+    const LicenseScreen(),
+    const SmsScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        backgroundColor: AppTheme.surface,
+        selectedItemColor: AppTheme.green,
+        unselectedItemColor: AppTheme.muted,
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.flight_takeoff), label: "Alertas"),
+          BottomNavigationBarItem(icon: Icon(Icons.badge), label: "Licença"),
+          BottomNavigationBarItem(icon: Icon(Icons.sms), label: "SMS"),
+        ],
+      ),
+    );
+  }
+}
+
+// --- PLACEHOLDERS ---
+class AlertsScreen extends StatelessWidget {
+  const AlertsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text("✈️ ALERTAS")),
+    body: const Center(child: Text("Feed de Emissões", style: TextStyle(color: AppTheme.muted))),
+  );
+}
+
+class SmsScreen extends StatelessWidget {
+  const SmsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text("💬 SMS CONNECTOR")),
+    body: const Center(child: Text("Módulo Legado", style: TextStyle(color: AppTheme.muted))),
+  );
+}
+
+// ==========================================
+// TELA 2: LICENÇA (O Dashboard com botão Sair)
+// ==========================================
+class LicenseScreen extends StatefulWidget {
+  const LicenseScreen({super.key});
+
+  @override
+  State<LicenseScreen> createState() => _LicenseScreenState();
+}
+
+class _LicenseScreenState extends State<LicenseScreen> {
   final AuthService _auth = AuthService();
   String _deviceId = "Carregando...";
+  String _userToken = "...";
+  String _userEmail = "...";
   String _statusConexao = "Verificando Servidor...";
 
   @override
@@ -39,168 +146,108 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _inicializarSistema();
   }
 
-  bool _bloqueado = false; // Novo estado para controlar a UI
   void _inicializarSistema() async {
     setState(() => _statusConexao = "Validando Licença...");
-
-    // 1. Carrega ID
     String id = await _auth.getDeviceId();
-    
-    // 2. Validação "Day-Pass"
+    Map<String, String> dados = await _auth.getDadosUsuario();
     AuthStatus status = await _auth.validarAcessoDiario();
 
     setState(() {
       _deviceId = id;
+      _userToken = dados['token']!;
+      _userEmail = dados['email']!;
       
       if (status == AuthStatus.autorizado) {
-        _statusConexao = "🟢 Sistema Operacional";
-        _bloqueado = false;
-        // Inicia monitoramento de alertas aqui, se necessário
-      } else if (status == AuthStatus.bloqueado) {
-        _statusConexao = "⛔ DISPOSITIVO NÃO AUTORIZADO";
-        _bloqueado = true;
+        _statusConexao = "🟢 Serviço Ativo";
       } else {
-        _statusConexao = "⚠️ Sem Rede (Offline)";
-        _bloqueado = false; // Permitir uso offline se já tiver validado antes? (Decisão de Negócio)
+        _statusConexao = "⛔ BLOQUEADO";
       }
     });
   }
 
+  // 🔴 FUNÇÃO DE LOGOFF (Sair)
+  void _fazerLogoff() async {
+    // Aqui no futuro chamaremos o GAS para limpar a coluna D ou E
+    await _auth.logout();
+    
+    if (mounted) {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SplashRouter()));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_bloqueado) {
-      return Scaffold(
-        backgroundColor: AppTheme.bg,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(30.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.block, size: 80, color: AppTheme.red),
-                const SizedBox(height: 20),
-                const Text(
-                  "ACESSO NEGADO",
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.red),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  "Todas as vagas de licença estão ocupadas.\n\nPara acessar, remova um dispositivo antigo na planilha (Aba Controle, Colunas B ou C).",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.muted),
-                ),
-                const SizedBox(height: 40),
-                SelectableText("Seu ID: $_deviceId", style: const TextStyle(fontFamily: 'monospace')),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.refresh),
-                  label: const Text("TENTAR NOVAMENTE"),
-                  onPressed: _inicializarSistema, // Tenta revalidar
-                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.surface),
-                )
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // ... Retorna o Scaffold normal do Dashboard se não estiver bloqueado ...
     return Scaffold(
       appBar: AppBar(
-        title: const Text("DASHBOARD // MILHAS"),
+        title: const Text("🪪 LICENÇA"),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: AppTheme.accent),
-            onPressed: _inicializarSistema,
-          )
+          IconButton(icon: const Icon(Icons.refresh, color: AppTheme.accent), onPressed: _inicializarSistema)
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // CARTÃO DE STATUS (Animate para efeito Cyberpunk de entrada)
+            // Status do Serviço
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.card,
-                border: Border.all(color: AppTheme.border),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              padding: const EdgeInsets.all(30),
+              decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(12)),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("STATUS DO SISTEMA", 
-                      style: TextStyle(color: AppTheme.muted, fontSize: 12)),
-                  const SizedBox(height: 8),
-                  Text(_statusConexao, 
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ],
-              ),
-            ).animate().fadeIn(duration: 600.ms).slideY(begin: 0.2),
-
-            const SizedBox(height: 20),
-
-            // CARTÃO DE LICENÇA (Device ID)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.surface,
-                border: Border.all(color: AppTheme.accent.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.fingerprint, color: AppTheme.accent),
-                      SizedBox(width: 10),
-                      Text("SUA LICENÇA (DEVICE ID)", 
-                          style: TextStyle(color: AppTheme.accent, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  SelectableText(
-                    _deviceId,
-                    style: const TextStyle(
-                      fontFamily: 'monospace', 
-                      fontSize: 14, 
-                      letterSpacing: 1.2
+                  Container(
+                    width: 60, height: 60,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle, 
+                      color: AppTheme.green, 
+                      boxShadow: [BoxShadow(color: AppTheme.green, blurRadius: 20, spreadRadius: -10)]
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  const Text("Envie este código ao administrador para liberar acesso.",
-                      style: TextStyle(color: AppTheme.muted, fontSize: 10)),
+                  const SizedBox(height: 20),
+                  Text(_statusConexao, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                 ],
               ),
-            ).animate().fadeIn(delay: 300.ms).slideX(),
-
-            const Spacer(),
-
-            // BOTÃO DE AÇÃO (Futuro WebView)
-            SizedBox(
+            ),
+            const SizedBox(height: 20),
+            
+            // Info Device e Licença (Conforme Wireframe)
+            Container(
               width: double.infinity,
-              height: 55,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.accent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: const Icon(Icons.rocket_launch),
-                label: const Text("ABRIR PAINEL DE EMISSÃO"),
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("🚀 Em breve: Abrindo WebView..."))
-                  );
-                },
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(color: AppTheme.surface, border: Border.all(color: AppTheme.border), borderRadius: BorderRadius.circular(12)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("LICENÇA", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  Text(_userToken, style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.accent)),
+                  const SizedBox(height: 15),
+                  
+                  const Text("E-MAIL VINCULADO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  Text(_userEmail, style: const TextStyle(fontSize: 14)),
+                  const SizedBox(height: 15),
+
+                  const Text("VINCULADO AO APARELHO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  SelectableText(_deviceId, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                ],
               ),
             ),
+            const Spacer(),
+            
+            // BOTÃO DE SAIR
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.red),
+                  foregroundColor: AppTheme.red,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                ),
+                icon: const Icon(Icons.logout),
+                label: const Text("DESCONECTAR APARELHO"),
+                onPressed: _fazerLogoff,
+              ),
+            )
           ],
         ),
       ),
