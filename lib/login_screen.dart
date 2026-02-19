@@ -15,8 +15,24 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthService _auth = AuthService();
   bool _isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _carregarMemoriaDosInputs(); // 🚀 Chama a memória ao abrir
+  }
+
+  void _carregarMemoriaDosInputs() async {
+    final dadosViejos = await _auth.getLastLoginData();
+    if (dadosViejos['email']!.isNotEmpty) {
+      setState(() {
+        _emailController.text = dadosViejos['email']!;
+        _tokenController.text = dadosViejos['token']!;
+      });
+    }
+  }
+
   void _ativarSistema() async {
-    if (_emailController.text.isEmpty || _tokenController.text.isEmpty) {
+    if (_emailController.text.trim().isEmpty || _tokenController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Preencha todos os campos!"), backgroundColor: Colors.redAccent)
       );
@@ -25,14 +41,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // Salva localmente
-    await _auth.salvarLoginLocal(_emailController.text, _tokenController.text);
+    // 🔴 AGORA VAMOS ATÉ A PLANILHA VERIFICAR!
+    final resultado = await _auth.autenticarNoServidor(
+      _emailController.text.trim(), 
+      _tokenController.text.trim()
+    );
 
-    // Navega para o Dashboard substituindo a tela atual
-    if (mounted) {
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (resultado['sucesso'] == true) {
+      // Login aprovado! Mostra mensagem e vai para o painel
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("✅ ${resultado['mensagem']}"), backgroundColor: Colors.green)
+      );
+      
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainNavigator()),
+      );
+    } else {
+      // Login negado! (Sem vaga, token errado, inativo, etc)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("❌ Erro: ${resultado['mensagem']}"), backgroundColor: Colors.redAccent)
       );
     }
   }

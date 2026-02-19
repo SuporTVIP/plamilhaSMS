@@ -12,6 +12,7 @@ class AppTheme {
   static const Color red = Color(0xFFEF4444);
   static const Color text = Color(0xFFE5E9F0);
   static const Color muted = Color(0xFF6B8099);
+  static const Color yellow = Color(0xFFF59E0B);
 
   static ThemeData get darkTheme {
     return ThemeData(

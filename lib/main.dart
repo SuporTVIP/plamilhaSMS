@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'core/theme.dart';
 import 'services/auth_service.dart';
 import 'login_screen.dart'; // Importa a tela neon
@@ -13,7 +14,7 @@ class MilhasAlertApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MilhasAlert',
+      title: 'PlaMilhasAlert',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: const SplashRouter(), // O guarda de trânsito
@@ -138,7 +139,12 @@ class _LicenseScreenState extends State<LicenseScreen> {
   String _deviceId = "Carregando...";
   String _userToken = "...";
   String _userEmail = "...";
+  String _userUsuario = "...";
+  String _userVencimento = "...";
+  String _userIdPlanilha = "...";
   String _statusConexao = "Verificando Servidor...";
+  bool _isBloqueado = false;
+  bool _isSaindo = false; // Flag para evitar múltiplos cliques no botão de logoff
 
   @override
   void initState() {
@@ -156,26 +162,55 @@ class _LicenseScreenState extends State<LicenseScreen> {
       _deviceId = id;
       _userToken = dados['token']!;
       _userEmail = dados['email']!;
-      
-      if (status == AuthStatus.autorizado) {
-        _statusConexao = "🟢 Serviço Ativo";
-      } else {
-        _statusConexao = "⛔ BLOQUEADO";
-      }
+      _userUsuario = dados['usuario']!; // Exibe o nome do usuário
+      _userVencimento = dados['vencimento']!; // Exibe o vencimento
+      _userIdPlanilha = dados['idPlanilha']!; // Exibe o ID da planilha para debug
+
+      _isBloqueado = (status != AuthStatus.autorizado);
+      _statusConexao = (status == AuthStatus.autorizado) ? "Serviço Ativo" : "⛔ BLOQUEADO";
     });
   }
 
-  // 🔴 FUNÇÃO DE LOGOFF (Sair)
-  void _fazerLogoff() async {
-    // Aqui no futuro chamaremos o GAS para limpar a coluna D ou E
-    await _auth.logout();
-    
+void _fazerLogoff() async {
+    setState(() => _isSaindo = true); // Ativa o loading
+    await _auth.logout(); // Aguarda a planilha ser limpa
     if (mounted) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SplashRouter()));
     }
   }
 
-  @override
+  // 🚀 LÓGICA DE CORES DA LICENÇA (Inteligência de Datas)
+  Color _getCorVencimento(String dataVencimentoStr) {
+    if (dataVencimentoStr == "..." || dataVencimentoStr == "N/A") return AppTheme.muted;
+
+    try {
+      // Divide a string "DD/MM/YYYY"
+      List<String> partes = dataVencimentoStr.split('/');
+      if (partes.length != 3) return AppTheme.muted;
+
+      // Cria os objetos de data comparáveis (ano, mês, dia)
+      DateTime validade = DateTime(int.parse(partes[2]), int.parse(partes[1]), int.parse(partes[0]));
+      DateTime hoje = DateTime.now();
+      
+      // Zera as horas para comparar apenas os dias úteis
+      hoje = DateTime(hoje.year, hoje.month, hoje.day);
+      
+      // Calcula a diferença em dias
+      int diasRestantes = validade.difference(hoje).inDays;
+
+      if (diasRestantes <= 3) {
+        return AppTheme.red; // 🔴 0 a 3 dias (Crítico)
+      } else if (diasRestantes <= 7) {
+        return AppTheme.yellow; // 🟡 4 a 7 dias (Alerta) - Laranja/Amarelo
+      } else {
+        return AppTheme.green; // 🟢 Mais de 7 dias (Tranquilo)
+      }
+    } catch (e) {
+      return AppTheme.muted; // Fallback em caso de erro na string
+    }
+  }
+
+@override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -184,33 +219,51 @@ class _LicenseScreenState extends State<LicenseScreen> {
           IconButton(icon: const Icon(Icons.refresh, color: AppTheme.accent), onPressed: _inicializarSistema)
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView( 
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            // Status do Serviço
+            // Status do Serviço (REFORMULADO)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(30),
               decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(12)),
               child: Column(
                 children: [
-                  Container(
-                    width: 60, height: 60,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle, 
-                      color: AppTheme.green, 
-                      boxShadow: [BoxShadow(color: AppTheme.green, blurRadius: 20, spreadRadius: -10)]
+                  // 🚀 FOTO PROVISÓRIA (Avatar com iniciais)
+                  CircleAvatar(
+                    radius: 45,
+                    backgroundColor: AppTheme.border,
+                    // Usa a API gratuita do ui-avatars para gerar uma imagem com o nome do usuário
+                    backgroundImage: NetworkImage(
+                      'https://ui-avatars.com/api/?name=${Uri.encodeComponent(_userUsuario)}&background=0D1320&color=3B82F6&size=200'
                     ),
-                  ),
+                  ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
+                  
                   const SizedBox(height: 20),
-                  Text(_statusConexao, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  
+                  // 🚀 BOLA VERDE AO LADO DO TEXTO
+                 Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 14, 
+                        height: 14,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle, 
+                          color: _isBloqueado ? AppTheme.red : AppTheme.green, 
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(_statusConexao, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
             
-            // Info Device e Licença (Conforme Wireframe)
+            // Info Expanded
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -218,22 +271,42 @@ class _LicenseScreenState extends State<LicenseScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const Text("USUÁRIO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  Text(_userUsuario, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 15),
+
                   const Text("LICENÇA", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
                   Text(_userToken, style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.accent)),
                   const SizedBox(height: 15),
                   
+                  const Text("VÁLIDA ATÉ", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  // 🚀 AQUI A COR MUDA DINAMICAMENTE
+                  Text(
+                    _userVencimento, 
+                    style: TextStyle(
+                      fontSize: 14, 
+                      fontWeight: FontWeight.bold,
+                      color: _getCorVencimento(_userVencimento) // Chamada da inteligência de cor
+                    )
+                  ),
+                  const SizedBox(height: 15),
+
                   const Text("E-MAIL VINCULADO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
                   Text(_userEmail, style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 15),
 
+                  const Text("ID DA PLANILHA CLIENTE", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
+                  SelectableText(_userIdPlanilha, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
+                  const SizedBox(height: 15),
+
                   const Text("VINCULADO AO APARELHO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  SelectableText(_deviceId, style: const TextStyle(fontFamily: 'monospace', fontSize: 11)),
+                  SelectableText(_deviceId, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
                 ],
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 20),
             
-            // BOTÃO DE SAIR
+ // BOTÃO DE SAIR COM LOADING
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -243,9 +316,11 @@ class _LicenseScreenState extends State<LicenseScreen> {
                   foregroundColor: AppTheme.red,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
                 ),
-                icon: const Icon(Icons.logout),
-                label: const Text("DESCONECTAR APARELHO"),
-                onPressed: _fazerLogoff,
+                icon: _isSaindo 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.red, strokeWidth: 2)) 
+                  : const Icon(Icons.logout),
+                label: Text(_isSaindo ? "DESCONECTANDO..." : "DESCONECTAR APARELHO"),
+                onPressed: _isSaindo ? null : _fazerLogoff,
               ),
             )
           ],
