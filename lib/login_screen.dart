@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 🚀 IMPORTANTE PARA O CLIPBOARD (COPIAR/COLAR)
+import 'core/theme.dart';
 import 'services/auth_service.dart';
-import 'main.dart'; // Para navegar para o MainNavigator após login
+import 'main.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _carregarMemoriaDosInputs(); // 🚀 Chama a memória ao abrir
+    _carregarMemoriaDosInputs();
   }
 
   void _carregarMemoriaDosInputs() async {
@@ -31,17 +33,35 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // 🚀 FUNÇÃO PARA COLAR TEXTO DA ÁREA DE TRANSFERÊNCIA
+  void _colarDoClipboard(TextEditingController controller) async {
+    ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data != null && data.text != null) {
+      setState(() {
+        controller.text = data.text!;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Texto colado com sucesso!"), 
+            backgroundColor: AppTheme.green,
+            duration: Duration(seconds: 1),
+          )
+        );
+      }
+    }
+  }
+
   void _ativarSistema() async {
     if (_emailController.text.trim().isEmpty || _tokenController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Preencha todos os campos!"), backgroundColor: Colors.redAccent)
+        const SnackBar(content: Text("Preencha todos os campos!"), backgroundColor: AppTheme.red)
       );
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // 🔴 AGORA VAMOS ATÉ A PLANILHA VERIFICAR!
     final resultado = await _auth.autenticarNoServidor(
       _emailController.text.trim(), 
       _tokenController.text.trim()
@@ -52,9 +72,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (resultado['sucesso'] == true) {
-      // Login aprovado! Mostra mensagem e vai para o painel
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("✅ ${resultado['mensagem']}"), backgroundColor: Colors.green)
+        SnackBar(content: Text("✅ ${resultado['mensagem']}"), backgroundColor: AppTheme.green)
       );
       
       Navigator.pushReplacement(
@@ -62,127 +81,142 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (context) => const MainNavigator()),
       );
     } else {
-      // Login negado! (Sem vaga, token errado, inativo, etc)
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Erro: ${resultado['mensagem']}"), backgroundColor: Colors.redAccent)
+        SnackBar(content: Text("❌ Erro: ${resultado['mensagem']}"), backgroundColor: AppTheme.red)
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Cores extraídas do seu design
-    const Color neonPurple = Color(0xFFB026FF);
-    const Color darkBg = Color(0xFF050505);
-    const Color inputBorder = Color(0xFF333333);
-
     return Scaffold(
-      backgroundColor: darkBg,
+      backgroundColor: AppTheme.bg, // 🚀 Unificando o fundo
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // TÍTULO NEON
-              Text(
-                "MilhasAlert", // Mude para PlamilhaSMS se preferir
-                style: TextStyle(
-                  fontFamily: 'Inter',
-                  fontSize: 36,
-                  fontWeight: FontWeight.w900,
-                  color: neonPurple,
-                  shadows: [
-                    Shadow(color: neonPurple.withOpacity(0.8), blurRadius: 20),
-                    Shadow(color: neonPurple.withOpacity(0.4), blurRadius: 40),
-                  ],
-                ),
+              // 🚀 TÍTULO ESTILO RADAR VIP (Super Bold)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.radar, color: AppTheme.accent, size: 40),
+                  const SizedBox(width: 12),
+                  Text(
+                    "PLAMILHAS",
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 40,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: [Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20)],
+                    ),
+                  ),
+                  Text(
+                    "VIP",
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 40,
+                      fontWeight: FontWeight.w300,
+                      color: AppTheme.accent,
+                      shadows: [Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20)],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 40),
 
-              // CAIXA DE STATUS (Simulando o design)
+              // CAIXA DE STATUS (Estilo Painel)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F1F16), // Fundo verde super escuro
+                  color: AppTheme.card,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF1B3B26)),
+                  border: Border.all(color: AppTheme.border),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.check_circle, color: Color(0xFF10B981), size: 20),
+                    Icon(Icons.shield, color: AppTheme.accent, size: 20),
                     SizedBox(width: 12),
                     Text(
-                      "aguardando ativação de licença",
-                      style: TextStyle(color: Color(0xFF10B981), fontSize: 13, fontWeight: FontWeight.w500),
+                      "Autenticação de Segurança",
+                      style: TextStyle(color: AppTheme.text, fontSize: 13, fontWeight: FontWeight.w500, letterSpacing: 1),
                     )
                   ],
                 ),
               ),
               const SizedBox(height: 30),
 
-              // INPUT: E-MAIL
+              // INPUT: E-MAIL (Estilo Filtro)
               TextField(
                 controller: _emailController,
-                style: const TextStyle(color: Colors.white),
+                style: const TextStyle(color: Colors.white, fontSize: 14),
                 decoration: InputDecoration(
-                  labelText: "e-mail de destino",
-                  labelStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  prefixIcon: const Icon(Icons.email, color: neonPurple, size: 20),
+                  labelText: "E-mail de Destino",
+                  labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  filled: true,
+                  fillColor: AppTheme.card,
+                  prefixIcon: const Icon(Icons.email, color: AppTheme.muted, size: 20),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: inputBorder),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.border),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: neonPurple),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.accent),
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
-              // INPUT: CHAVE (TOKEN)
+              // INPUT: CHAVE (TOKEN) COM BOTÃO COLAR
               TextField(
                 controller: _tokenController,
-                style: const TextStyle(color: Colors.white, letterSpacing: 2),
+                style: const TextStyle(color: Colors.white, letterSpacing: 2, fontSize: 14),
                 decoration: InputDecoration(
-                  labelText: "chave de licença",
-                  labelStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-                  floatingLabelBehavior: FloatingLabelBehavior.always,
-                  prefixIcon: const Icon(Icons.lock, color: neonPurple, size: 20),
-                  suffixIcon: const Icon(Icons.build, color: Colors.grey, size: 20),
+                  labelText: "Chave de Licença",
+                  labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                  filled: true,
+                  fillColor: AppTheme.card,
+                  prefixIcon: const Icon(Icons.key, color: AppTheme.muted, size: 20),
+                  // 🚀 BOTÃO DE COLAR AQUI
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.content_paste, color: AppTheme.accent, size: 20),
+                    tooltip: "Colar Licença",
+                    onPressed: () => _colarDoClipboard(_tokenController),
+                  ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: inputBorder),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.border),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: neonPurple),
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.accent),
                   ),
                 ),
               ),
               const SizedBox(height: 40),
 
-              // BOTÃO ATIVAR
+              // BOTÃO ATIVAR (Cyberpunk)
               SizedBox(
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: neonPurple,
+                    backgroundColor: AppTheme.accent,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     elevation: 10,
-                    shadowColor: neonPurple.withOpacity(0.5),
+                    shadowColor: AppTheme.accent.withOpacity(0.3),
                   ),
                   onPressed: _isLoading ? null : _ativarSistema,
                   child: _isLoading 
                     ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
-                        "ativar sistema", 
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1)
+                        "INICIAR SESSÃO", 
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.5)
                       ),
                 ),
               )

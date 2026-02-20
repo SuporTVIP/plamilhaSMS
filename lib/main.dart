@@ -27,6 +27,26 @@ void main() async {
 }
 
 // ==========================================
+// APP ROOT (MaterialApp com Tema)
+// ==========================================
+class MilhasAlertApp extends StatelessWidget {
+  const MilhasAlertApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Milhas Alert',
+      theme: ThemeData.dark().copyWith(
+        primaryColor: AppTheme.accent,
+        scaffoldBackgroundColor: AppTheme.bg,
+      ),
+      home: const SplashRouter(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+// ==========================================
 // ROTEADOR INICIAL (Verifica se já logou)
 // ==========================================
 class SplashRouter extends StatefulWidget {
@@ -95,7 +115,7 @@ class _MainNavigatorState extends State<MainNavigator> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         backgroundColor: AppTheme.surface,
-        selectedItemColor: AppTheme.green,
+        selectedItemColor: AppTheme.accent,
         unselectedItemColor: AppTheme.muted,
         currentIndex: _currentIndex,
         onTap: (index) => setState(() => _currentIndex = index),
@@ -225,7 +245,22 @@ void _iniciarMotorDeTracao() {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("✈️ FEED DE EMISSÕES"),
+        // 🚀 CABEÇALHO ESTILIZADO CYBERPUNK
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.radar, color: AppTheme.accent, size: 22),
+            SizedBox(width: 8),
+            Text(
+              "PLAMILHAS",
+              style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2, fontSize: 18),
+            ),
+            Text(
+              "VIP",
+              style: TextStyle(fontWeight: FontWeight.w300, color: AppTheme.accent, letterSpacing: 2, fontSize: 18),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent), // Fica verde se tiver filtro ativo
@@ -546,48 +581,80 @@ void _fazerLogoff() async {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("🪪 LICENÇA"),
+        // 🚀 CABEÇALHO PADRONIZADO IGUAL AO DO ALERTA
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.badge, color: AppTheme.accent, size: 22),
+            SizedBox(width: 8),
+            Text("MINHA ", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
+            Text("SESSÃO", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+          ],
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: AppTheme.accent), onPressed: _inicializarSistema)
+          IconButton(icon: const Icon(Icons.refresh, color: AppTheme.muted), onPressed: _inicializarSistema)
         ],
       ),
       body: SingleChildScrollView( 
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            // Status do Serviço (REFORMULADO)
+            // Status do Serviço (Elevado)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(color: AppTheme.card, borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppTheme.card, 
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _isBloqueado ? AppTheme.red.withOpacity(0.3) : AppTheme.green.withOpacity(0.2)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isBloqueado ? AppTheme.red.withOpacity(0.05) : AppTheme.green.withOpacity(0.05),
+                    blurRadius: 20, spreadRadius: 5
+                  )
+                ]
+              ),
               child: Column(
                 children: [
-                  // 🚀 FOTO PROVISÓRIA (Avatar com iniciais)
-                  CircleAvatar(
-                    radius: 45,
-                    backgroundColor: AppTheme.border,
-                    // Usa a API gratuita do ui-avatars para gerar uma imagem com o nome do usuário
-                    backgroundImage: NetworkImage(
-                      'https://ui-avatars.com/api/?name=${Uri.encodeComponent(_userUsuario)}&background=0D1320&color=3B82F6&size=200'
+                  // Avatar
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.border, width: 2),
                     ),
-                  ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
-                  
+                    child: CircleAvatar(
+                      radius: 40,
+                      backgroundColor: AppTheme.surface,
+                      backgroundImage: NetworkImage(
+                        'https://ui-avatars.com/api/?name=${Uri.encodeComponent(_userUsuario)}&background=0D1320&color=3B82F6&size=200&bold=true'
+                      ),
+                    ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
+                  ),
                   const SizedBox(height: 20),
                   
-                  // 🚀 BOLA VERDE AO LADO DO TEXTO
-                 Row(
+                  // Status
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        width: 14, 
-                        height: 14,
+                        width: 12, height: 12,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle, 
-                          color: _isBloqueado ? AppTheme.red : AppTheme.green, 
+                          color: _isBloqueado ? AppTheme.red : AppTheme.green,
+                          boxShadow: [BoxShadow(color: _isBloqueado ? AppTheme.red : AppTheme.green, blurRadius: 10)]
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Text(_statusConexao, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      Text(
+                        _statusConexao.toUpperCase(), 
+                        style: TextStyle(
+                          fontSize: 18, 
+                          fontWeight: FontWeight.w900, 
+                          letterSpacing: 1.5,
+                          color: _isBloqueado ? AppTheme.red : Colors.white
+                        )
+                      ),
                     ],
                   ),
                 ],
@@ -595,63 +662,57 @@ void _fazerLogoff() async {
             ),
             const SizedBox(height: 20),
             
-            // Info Expanded
+            // Info Expanded (Visual Clean)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: AppTheme.surface, border: Border.all(color: AppTheme.border), borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppTheme.surface, 
+                border: Border.all(color: AppTheme.border), 
+                borderRadius: BorderRadius.circular(16)
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("USUÁRIO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  Text(_userUsuario, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 15),
-
-                  const Text("LICENÇA", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  Text(_userToken, style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.accent)),
-                  const SizedBox(height: 15),
+                  _buildInfoRow("USUÁRIO", _userUsuario, valueColor: Colors.white),
+                  const Divider(color: AppTheme.border, height: 30),
                   
-                  const Text("VÁLIDA ATÉ", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  // 🚀 AQUI A COR MUDA DINAMICAMENTE
-                  Text(
-                    _userVencimento, 
-                    style: TextStyle(
-                      fontSize: 14, 
-                      fontWeight: FontWeight.bold,
-                      color: _getCorVencimento(_userVencimento) // Chamada da inteligência de cor
-                    )
-                  ),
-                  const SizedBox(height: 15),
-
-                  const Text("E-MAIL VINCULADO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  Text(_userEmail, style: const TextStyle(fontSize: 14)),
-                  const SizedBox(height: 15),
-
-                  const Text("ID DA PLANILHA CLIENTE", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  SelectableText(_userIdPlanilha, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
-                  const SizedBox(height: 15),
-
-                  const Text("VINCULADO AO APARELHO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5)),
-                  SelectableText(_deviceId, style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.grey)),
+                  _buildInfoRow("LICENÇA", _userToken, valueColor: AppTheme.accent, isMono: true),
+                  const Divider(color: AppTheme.border, height: 30),
+                  
+                  _buildInfoRow("VÁLIDA ATÉ", _userVencimento, valueColor: _getCorVencimento(_userVencimento)),
+                  const Divider(color: AppTheme.border, height: 30),
+                  
+                  _buildInfoRow("E-MAIL VINCULADO", _userEmail),
+                  const Divider(color: AppTheme.border, height: 30),
+                  
+                  _buildInfoRow("ID PLANILHA CLIENTE", _userIdPlanilha, isMono: true, size: 10),
+                  const Divider(color: AppTheme.border, height: 30),
+                  
+                  _buildInfoRow("VINCULADO AO APARELHO", _deviceId, isMono: true, size: 10),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 30),
             
- // BOTÃO DE SAIR COM LOADING
+            // BOTÃO DE SAIR ESTILIZADO
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 55,
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppTheme.red),
+                  side: const BorderSide(color: AppTheme.red, width: 1.5),
                   foregroundColor: AppTheme.red,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                  backgroundColor: AppTheme.red.withOpacity(0.05), // Fundo levemente vermelho
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                 ),
                 icon: _isSaindo 
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.red, strokeWidth: 2)) 
-                  : const Icon(Icons.logout),
-                label: Text(_isSaindo ? "DESCONECTANDO..." : "DESCONECTAR APARELHO"),
+                  : const Icon(Icons.power_settings_new),
+                label: Text(
+                  _isSaindo ? "DESCONECTANDO..." : "DESCONECTAR APARELHO",
+                  style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                ),
                 onPressed: _isSaindo ? null : _fazerLogoff,
               ),
             )
@@ -660,10 +721,30 @@ void _fazerLogoff() async {
       ),
     );
   }
+
+  // 🚀 WIDGET AUXILIAR PARA ALINHAR AS INFORMAÇÕES
+  Widget _buildInfoRow(String title, String value, {Color valueColor = AppTheme.muted, bool isMono = false, double size = 13}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        SelectableText(
+          value, 
+          style: TextStyle(
+            color: valueColor, 
+            fontSize: size, 
+            fontWeight: FontWeight.bold,
+            fontFamily: isMono ? 'monospace' : null
+          )
+        ),
+      ],
+    );
+  }
 }
 
 // ==========================================
-// COMPONENTE: PAINEL DE FILTROS (BOTTOM SHEET)
+// COMPONENTE: PAINEL DE FILTROS COM CHIPS (BOTTOM SHEET)
 // ==========================================
 class FilterBottomSheet extends StatefulWidget {
   final UserFilters filtrosAtuais;
@@ -677,22 +758,31 @@ class FilterBottomSheet extends StatefulWidget {
 
 class _FilterBottomSheetState extends State<FilterBottomSheet> {
   late UserFilters _tempFiltros;
-  final _origemController = TextEditingController();
-  final _destinoController = TextEditingController();
+  List<String> _todosAeroportos = [];
+  bool _isLoadingAeros = true;
 
   @override
   void initState() {
     super.initState();
-    // Fazemos uma cópia para não alterar direto até o usuário clicar em "Salvar"
+    // Clona os filtros para edição
     _tempFiltros = UserFilters(
       latamAtivo: widget.filtrosAtuais.latamAtivo,
       smilesAtivo: widget.filtrosAtuais.smilesAtivo,
       azulAtivo: widget.filtrosAtuais.azulAtivo,
-      origens: widget.filtrosAtuais.origens,
-      destinos: widget.filtrosAtuais.destinos,
+      origens: List.from(widget.filtrosAtuais.origens),
+      destinos: List.from(widget.filtrosAtuais.destinos),
     );
-    _origemController.text = _tempFiltros.origens;
-    _destinoController.text = _tempFiltros.destinos;
+    _carregarAeroportos();
+  }
+
+  void _carregarAeroportos() async {
+    final list = await AeroportoService().getAeroportos();
+    if (mounted) {
+      setState(() {
+        _todosAeroportos = list;
+        _isLoadingAeros = false;
+      });
+    }
   }
 
   @override
@@ -704,33 +794,43 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
       ),
       decoration: const BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.all(Radius.circular(10))))),
+            Center(child: Container(width: 40, height: 4, decoration: const BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.all(Radius.circular(10))))),
             const SizedBox(height: 20),
-            const Text("✈️ Filtro de Emissões", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            
+            const Row(
+              children: [
+                Icon(Icons.radar, color: AppTheme.green),
+                SizedBox(width: 10),
+                Text("FILTRAGEM AVANÇADA", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: Colors.white)),
+              ],
+            ),
             const SizedBox(height: 24),
 
-            // Toggle Switches (Companhias)
+            // 🚀 Toggle Switches (Companhias)
             SwitchListTile(
-              title: const Text("LATAM", style: TextStyle(color: Colors.white)),
+              contentPadding: EdgeInsets.zero,
+              title: const Text("LATAM Pass", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
               activeColor: const Color(0xFFF43F5E), // Vermelho Latam
               value: _tempFiltros.latamAtivo,
               onChanged: (val) => setState(() => _tempFiltros.latamAtivo = val),
             ),
             SwitchListTile(
-              title: const Text("Smiles", style: TextStyle(color: Colors.white)),
+              contentPadding: EdgeInsets.zero,
+              title: const Text("Smiles", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
               activeColor: const Color(0xFFF59E0B), // Laranja Smiles
               value: _tempFiltros.smilesAtivo,
               onChanged: (val) => setState(() => _tempFiltros.smilesAtivo = val),
             ),
             SwitchListTile(
-              title: const Text("AZUL", style: TextStyle(color: Colors.white)),
+              contentPadding: EdgeInsets.zero,
+              title: const Text("Azul", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
               activeColor: const Color(0xFF38BDF8), // Azul
               value: _tempFiltros.azulAtivo,
               onChanged: (val) => setState(() => _tempFiltros.azulAtivo = val),
@@ -738,51 +838,144 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             
             const Divider(color: AppTheme.border, height: 30),
 
-            // Campos de Texto (Origem / Destino)
-            TextField(
-              controller: _origemController,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                labelText: "Origens (ex: GRU, JPA, NAT)",
-                labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                filled: true,
-                fillColor: AppTheme.card,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-              ),
-              onChanged: (val) => _tempFiltros.origens = val,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _destinoController,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                labelText: "Destinos (ex: LIS, MIA, MCO)",
-                labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
-                filled: true,
-                fillColor: AppTheme.card,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-              ),
-              onChanged: (val) => _tempFiltros.destinos = val,
-            ),
-            const SizedBox(height: 24),
+            // 🚀 CHIPS: ORIGEM E DESTINO
+            if (_isLoadingAeros) 
+              const Center(child: CircularProgressIndicator(color: AppTheme.accent))
+            else ...[
+              _buildAutocompleteChips("Origens", _tempFiltros.origens),
+              const SizedBox(height: 20),
+              _buildAutocompleteChips("Destinos", _tempFiltros.destinos),
+            ],
+            
+            const SizedBox(height: 30),
 
             // Botão Salvar
             SizedBox(
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.green, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                child: const Text("APLICAR FILTROS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.green, 
+                  foregroundColor: Colors.black, 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 5,
+                  shadowColor: AppTheme.green.withOpacity(0.5)
+                ),
+                child: const Text("APLICAR FILTROS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                 onPressed: () async {
-                  await _tempFiltros.save(); // Salva no celular
-                  widget.onFiltrosSalvos(_tempFiltros); // Avisa a tela principal
-                  if(context.mounted) Navigator.pop(context); // Fecha o painel
+                  await _tempFiltros.save(); 
+                  widget.onFiltrosSalvos(_tempFiltros); 
+                  if(context.mounted) Navigator.pop(context); 
                 },
               ),
             )
           ],
         ),
       ),
+    );
+  }
+
+  // 🚀 O MOTOR DE AUTOCOMPLETAR COM CHIPS
+  Widget _buildAutocompleteChips(String titulo, List<String> listaSelecionados) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(titulo.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        
+        // Área de exibição dos Chips Selecionados
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 8.0,
+          children: listaSelecionados.map((item) {
+            return Chip(
+              label: Text(item, style: const TextStyle(fontSize: 12, color: Colors.white)),
+              backgroundColor: AppTheme.card,
+              deleteIcon: const Icon(Icons.close, size: 16, color: AppTheme.red),
+              side: const BorderSide(color: AppTheme.border),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              onDeleted: () {
+                setState(() => listaSelecionados.remove(item));
+              },
+            );
+          }).toList(),
+        ),
+        
+        if (listaSelecionados.isNotEmpty) const SizedBox(height: 10),
+
+        // O Input de Busca
+        Autocomplete<String>(
+          optionsBuilder: (TextEditingValue textEditingValue) {
+            if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
+            return _todosAeroportos.where((aeroporto) => 
+              aeroporto.toLowerCase().contains(textEditingValue.text.toLowerCase()) && 
+              !listaSelecionados.contains(aeroporto) // Esconde os que já foram selecionados
+            );
+          },
+          onSelected: (String selecao) {
+            setState(() => listaSelecionados.add(selecao));
+          },
+          fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+            return TextField(
+              controller: textEditingController,
+              focusNode: focusNode,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: "Adicionar $titulo...",
+                hintStyle: const TextStyle(color: AppTheme.muted, fontSize: 13),
+                prefixIcon: const Icon(Icons.search, color: AppTheme.muted, size: 20),
+                filled: true,
+                fillColor: AppTheme.bg,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.accent)),
+              ),
+              onSubmitted: (value) {
+                // Permite adicionar texto livre se o usuário apertar Enter e não clicar na sugestão
+                if (value.trim().isNotEmpty && !listaSelecionados.contains(value.toUpperCase())) {
+                  setState(() {
+                    listaSelecionados.add(value.toUpperCase());
+                    textEditingController.clear();
+                    focusNode.requestFocus(); // Mantém o teclado aberto para add mais
+                  });
+                }
+              },
+            );
+          },
+          // Estiliza a caixinha de sugestões que flutua
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  width: MediaQuery.of(context).size.width - 40,
+                  margin: const EdgeInsets.only(top: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, spreadRadius: 2)]
+                  ),
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    shrinkWrap: true,
+                    itemCount: options.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final String option = options.elementAt(index);
+                      return ListTile(
+                        title: Text(option, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                        onTap: () {
+                          onSelected(option);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
