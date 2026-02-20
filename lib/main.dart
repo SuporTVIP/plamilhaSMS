@@ -5,6 +5,9 @@ import 'services/auth_service.dart';
 import 'login_screen.dart'; // Importa a tela neon
 import 'models/alert.dart';
 import 'services/alert_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'services/filter_service.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 void main() {
   runApp(const MilhasAlertApp());
@@ -120,43 +123,83 @@ class AlertsScreen extends StatefulWidget {
 
 class _AlertsScreenState extends State<AlertsScreen> {
   final AlertService _alertService = AlertService();
-  final List<Alert> _listaAlertas = [];
+  final List<Alert> _listaAlertasTodos = []; // Guarda TODOS os alertas da planilha
+  List<Alert> _listaAlertasFiltrados = [];   // O que realmente aparece na tela
   bool _isCarregando = true;
+  
+  UserFilters _filtros = UserFilters(); // 🚀 Instância dos Filtros
+
+  // 🚀 O REPRODUTOR DE ÁUDIO
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
+    _carregarFiltros(); // Puxa da memória primeiro
+  }
+
+  void _carregarFiltros() async {
+    _filtros = await UserFilters.load();
     _iniciarMotorDeTracao();
   }
 
-  void _iniciarMotorDeTracao() {
-    // 1. Inicia o Polling Dinâmico (Modo Economia Automático)
+void _iniciarMotorDeTracao() {
     _alertService.startMonitoring();
 
-    // 2. Fica escutando a "Stream" (Tubo de dados) por novos alertas
-    _alertService.alertStream.listen((novosAlertas) {
+    _alertService.alertStream.listen((novosAlertas) async {
       if (mounted) {
+        // 🚀 1. Antes de atualizar a tela, verifica se ALGUNS dos NOVOS alertas passa no filtro
+        List<Alert> novosQuePassaram = novosAlertas.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
+
         setState(() {
-          // Adiciona os novos alertas no topo da lista
-          _listaAlertas.insertAll(0, novosAlertas);
+          _listaAlertasTodos.insertAll(0, novosAlertas);
+          _aplicarFiltrosNaTela(); 
           _isCarregando = false;
         });
+
+        // 🚀 2. TOCA O SOM! (Se chegou algo novo e não foi bloqueado pelo filtro)
+        if (novosQuePassaram.isNotEmpty) {
+          try {
+            await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+          } catch (e) {
+            print("Erro ao tocar som: $e");
+          }
+        }
       }
     });
 
-    // Timeout de carregamento inicial (se a planilha estiver vazia ou demorar)
     Future.delayed(const Duration(seconds: 4), () {
-      if (mounted && _isCarregando) {
-        setState(() => _isCarregando = false);
-      }
+      if (mounted && _isCarregando) setState(() => _isCarregando = false);
+    });
+  }
+
+  // 🚀 FUNÇÃO QUE CORTA A LISTA COM BASE NAS ESCOLHAS DO USUÁRIO
+  void _aplicarFiltrosNaTela() {
+    setState(() {
+      _listaAlertasFiltrados = _listaAlertasTodos.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
     });
   }
 
   @override
   void dispose() {
-    // Quando fechar o app, para o motor para economizar bateria
     _alertService.stopMonitoring();
     super.dispose();
+  }
+
+  // 🚀 AÇÃO DO BOTÃO DE CIMA: ABRE O PAINEL E ESCUTA A RESPOSTA
+  void _abrirPainelFiltros() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // Permite que o teclado empurre a tela
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => FilterBottomSheet(
+        filtrosAtuais: _filtros,
+        onFiltrosSalvos: (novosFiltros) {
+          _filtros = novosFiltros;
+          _aplicarFiltrosNaTela(); // Atualiza a lista na hora que fecha o painel
+        },
+      ),
+    );
   }
 
   @override
@@ -165,38 +208,33 @@ class _AlertsScreenState extends State<AlertsScreen> {
       appBar: AppBar(
         title: const Text("✈️ FEED DE EMISSÕES"),
         actions: [
-          // O Botão de Filtros que implementaremos no próximo passo
           IconButton(
-            icon: const Icon(Icons.tune, color: AppTheme.accent),
+            icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent), // Fica verde se tiver filtro ativo
             tooltip: "Filtros",
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Filtros em desenvolvimento..."))
-              );
-            },
+            onPressed: _abrirPainelFiltros, // 🚀 Chama o painel
           )
         ],
       ),
       body: _isCarregando
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
-          : _listaAlertas.isEmpty
+          : _listaAlertasFiltrados.isEmpty // Muda para usar a lista filtrada
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.airplanemode_off, size: 64, color: AppTheme.border),
+                      Icon(Icons.flight, size: 64, color: AppTheme.border),
                       const SizedBox(height: 16),
-                      const Text("Nenhuma emissão recente.", style: TextStyle(color: AppTheme.muted)),
-                      const Text("Aguardando o radar...", style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                      const Text("Nenhuma emissão encontrada.", style: TextStyle(color: AppTheme.muted)),
+                      const Text("Verifique seus filtros ou aguarde.", style: TextStyle(color: AppTheme.muted, fontSize: 12)),
                     ],
                   ),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _listaAlertas.length,
+                  itemCount: _listaAlertasFiltrados.length, // Usa a lista filtrada
                   itemBuilder: (context, index) {
-                    final alerta = _listaAlertas[index];
-                    return AlertCard(alerta: alerta); // Componente visual do card
+                    final alerta = _listaAlertasFiltrados[index];
+                    return AlertCard(alerta: alerta);
                   },
                 ),
     );
@@ -204,107 +242,187 @@ class _AlertsScreenState extends State<AlertsScreen> {
 }
 
 // ==========================================
-// COMPONENTE: CARD DO ALERTA (Visual Cyberpunk)
+// COMPONENTE: CARD DO ALERTA (Retrátil e Elegante)
 // ==========================================
-class AlertCard extends StatelessWidget {
+class AlertCard extends StatefulWidget {
   final Alert alerta;
-  
   const AlertCard({super.key, required this.alerta});
 
   @override
+  State<AlertCard> createState() => _AlertCardState();
+}
+
+class _AlertCardState extends State<AlertCard> {
+  bool _isExpanded = false;
+
+  void _abrirLink() async {
+    if (widget.alerta.link == null || widget.alerta.link!.isEmpty) return;
+    final Uri url = Uri.parse(widget.alerta.link!);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication); // Abre no navegador do celular
+    } else {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link.")));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Define a cor da badge de acordo com o programa
-    Color corPrograma = AppTheme.accent;
-    if (alerta.programa.toUpperCase().contains("AZUL")) corPrograma = Colors.lightBlue;
-    if (alerta.programa.toUpperCase().contains("LATAM")) corPrograma = Colors.redAccent;
-    if (alerta.programa.toUpperCase().contains("SMILES")) corPrograma = Colors.orangeAccent;
+    // 🎨 PALETA DE CORES SUTIL (Cyberpunk Dark)
+    Color corPrincipal = AppTheme.accent;
+    Color corFundo = AppTheme.card;
+    
+    final prog = widget.alerta.programa.toUpperCase();
+    if (prog.contains("AZUL")) {
+      corPrincipal = const Color(0xFF38BDF8); // Azul claro
+      corFundo = const Color(0xFF0C1927);     // Fundo com tintura azul muito escuro
+    } else if (prog.contains("LATAM")) {
+      corPrincipal = const Color(0xFFF43F5E); // Vermelho/Rosa
+      corFundo = const Color(0xFF230D14);     // Fundo com tintura vermelha
+    } else if (prog.contains("SMILES")) {
+      corPrincipal = const Color(0xFFF59E0B); // Laranja
+      corFundo = const Color(0xFF22160A);     // Fundo com tintura laranja
+    }
 
-    // Formata a data (Ex: 14:30)
-    String horaFormatada = "${alerta.data.hour.toString().padLeft(2, '0')}:${alerta.data.minute.toString().padLeft(2, '0')}";
+    String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
+        color: corFundo,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.5),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          )
-        ],
+        border: Border.all(color: _isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
+        boxShadow: _isExpanded ? [BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1)] : [],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Cabeçalho do Card (Programa + Hora)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.card,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
-              border: Border(bottom: BorderSide(color: AppTheme.border)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.airplane_ticket, color: corPrograma, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      alerta.programa.toUpperCase(),
-                      style: TextStyle(color: corPrograma, fontWeight: FontWeight.bold, letterSpacing: 1),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.access_time, color: AppTheme.muted, size: 14),
-                    const SizedBox(width: 4),
-                    Text(horaFormatada, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
-                  ],
-                )
-              ],
-            ),
-          ),
-          
-          // Corpo do Card (Mensagem)
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              alerta.mensagem,
-              style: const TextStyle(fontSize: 13, height: 1.5, color: AppTheme.text),
-            ),
-          ),
-
-          // Rodapé do Card (Link de Emissão)
-          if (alerta.link != null && alerta.link!.isNotEmpty)
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _isExpanded = !_isExpanded), // 🚀 Expande/Recolhe
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 🔹 CABEÇALHO RESUMIDO (Sempre Visível)
             Padding(
-              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.green,
-                    side: const BorderSide(color: AppTheme.green),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  // Ícone da Companhia
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: corPrincipal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Icon(Icons.flight_takeoff, color: corPrincipal, size: 20),
                   ),
-                  icon: const Icon(Icons.link, size: 16),
-                  label: const Text("ABRIR OFERTA"),
-                  onPressed: () {
-                    // Futuramente abriremos a WebView ou Link Externo aqui
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Link copiado/abrindo..."))
-                    );
-                  },
+                  const SizedBox(width: 12),
+                  
+                  // Info Principal (Trecho e Milhas)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.alerta.trecho != "N/A" ? widget.alerta.trecho : "Nova Oportunidade!",
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(prog, style: TextStyle(color: corPrincipal, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                            const Text(" • ", style: TextStyle(color: AppTheme.muted)),
+                            Text("${widget.alerta.milhas} milhas", style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  // Hora e Seta
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(horaFormatada, style: const TextStyle(color: AppTheme.muted, fontSize: 11)),
+                      const SizedBox(height: 4),
+                      Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppTheme.muted, size: 20),
+                    ],
+                  )
+                ],
+              ),
+            ),
+
+            // 🔹 DETALHES EXPANDIDOS (Aparece ao clicar)
+            if (_isExpanded)
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(color: AppTheme.border, height: 20),
+                    
+                    // Grid de Dados Extraídos (Metadados)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildInfoColumn("IDA", widget.alerta.dataIda),
+                        _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
+                        _buildInfoColumn("CUSTO (Milhas)", widget.alerta.valorFabricado),
+                        _buildInfoColumn("VENDA FÃ", widget.alerta.valorEmissao, isHighlight: true),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Texto Original Oculto (Apenas para contexto se o usuário quiser ler tudo)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
+                      child: Text(
+                        widget.alerta.mensagem,
+                        style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontStyle: FontStyle.italic),
+                        maxLines: 4, overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 🚀 BOTÃO DE IR PARA O SITE
+                    if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
+                      SizedBox(
+                        width: double.infinity,
+                        height: 45,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: corPrincipal,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.open_in_browser, size: 18),
+                          label: const Text("EMITIR AGORA", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          onPressed: _abrirLink,
+                        ),
+                      )
+                  ],
                 ),
               ),
-            )
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  // Widget ajudante para as coluninhas de dados
+  Widget _buildInfoColumn(String titulo, String valor, {bool isHighlight = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 9, letterSpacing: 1)),
+        const SizedBox(height: 4),
+        Text(
+          valor, 
+          style: TextStyle(
+            color: isHighlight ? AppTheme.green : Colors.white, 
+            fontSize: 12, 
+            fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal
+          )
+        ),
+      ],
     );
   }
 }
@@ -403,6 +521,7 @@ void _fazerLogoff() async {
       return AppTheme.muted; // Fallback em caso de erro na string
     }
   }
+
 
 @override
   Widget build(BuildContext context) {
@@ -515,6 +634,131 @@ void _fazerLogoff() async {
                   : const Icon(Icons.logout),
                 label: Text(_isSaindo ? "DESCONECTANDO..." : "DESCONECTAR APARELHO"),
                 onPressed: _isSaindo ? null : _fazerLogoff,
+              ),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// COMPONENTE: PAINEL DE FILTROS (BOTTOM SHEET)
+// ==========================================
+class FilterBottomSheet extends StatefulWidget {
+  final UserFilters filtrosAtuais;
+  final Function(UserFilters) onFiltrosSalvos;
+
+  const FilterBottomSheet({Key? key, required this.filtrosAtuais, required this.onFiltrosSalvos}) : super(key: key);
+
+  @override
+  State<FilterBottomSheet> createState() => _FilterBottomSheetState();
+}
+
+class _FilterBottomSheetState extends State<FilterBottomSheet> {
+  late UserFilters _tempFiltros;
+  final _origemController = TextEditingController();
+  final _destinoController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Fazemos uma cópia para não alterar direto até o usuário clicar em "Salvar"
+    _tempFiltros = UserFilters(
+      latamAtivo: widget.filtrosAtuais.latamAtivo,
+      smilesAtivo: widget.filtrosAtuais.smilesAtivo,
+      azulAtivo: widget.filtrosAtuais.azulAtivo,
+      origens: widget.filtrosAtuais.origens,
+      destinos: widget.filtrosAtuais.destinos,
+    );
+    _origemController.text = _tempFiltros.origens;
+    _destinoController.text = _tempFiltros.destinos;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        top: 20, left: 20, right: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20, // Empurra pra cima se o teclado abrir
+      ),
+      decoration: const BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppTheme.border, borderRadius: BorderRadius.all(Radius.circular(10))))),
+            const SizedBox(height: 20),
+            const Text("✈️ Filtro de Emissões", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(height: 24),
+
+            // Toggle Switches (Companhias)
+            SwitchListTile(
+              title: const Text("LATAM", style: TextStyle(color: Colors.white)),
+              activeColor: const Color(0xFFF43F5E), // Vermelho Latam
+              value: _tempFiltros.latamAtivo,
+              onChanged: (val) => setState(() => _tempFiltros.latamAtivo = val),
+            ),
+            SwitchListTile(
+              title: const Text("Smiles", style: TextStyle(color: Colors.white)),
+              activeColor: const Color(0xFFF59E0B), // Laranja Smiles
+              value: _tempFiltros.smilesAtivo,
+              onChanged: (val) => setState(() => _tempFiltros.smilesAtivo = val),
+            ),
+            SwitchListTile(
+              title: const Text("AZUL", style: TextStyle(color: Colors.white)),
+              activeColor: const Color(0xFF38BDF8), // Azul
+              value: _tempFiltros.azulAtivo,
+              onChanged: (val) => setState(() => _tempFiltros.azulAtivo = val),
+            ),
+            
+            const Divider(color: AppTheme.border, height: 30),
+
+            // Campos de Texto (Origem / Destino)
+            TextField(
+              controller: _origemController,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: "Origens (ex: GRU, JPA, NAT)",
+                labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                filled: true,
+                fillColor: AppTheme.card,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+              ),
+              onChanged: (val) => _tempFiltros.origens = val,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _destinoController,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                labelText: "Destinos (ex: LIS, MIA, MCO)",
+                labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
+                filled: true,
+                fillColor: AppTheme.card,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+              ),
+              onChanged: (val) => _tempFiltros.destinos = val,
+            ),
+            const SizedBox(height: 24),
+
+            // Botão Salvar
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.green, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                child: const Text("APLICAR FILTROS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                onPressed: () async {
+                  await _tempFiltros.save(); // Salva no celular
+                  widget.onFiltrosSalvos(_tempFiltros); // Avisa a tela principal
+                  if(context.mounted) Navigator.pop(context); // Fecha o painel
+                },
               ),
             )
           ],

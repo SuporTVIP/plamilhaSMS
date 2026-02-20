@@ -72,7 +72,9 @@ class DiscoveryService {
     final prefs = await SharedPreferences.getInstance();
     
     try {
-      final response = await http.get(Uri.parse(_discoveryUrl)).timeout(const Duration(seconds: 10));
+      // Adiciona a hora atual na URL do Gist para o GitHub ser forçado a entregar a versão mais nova
+      final urlSemCache = "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
+      final response = await http.get(Uri.parse(urlSemCache)).timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         await prefs.setString(_keyCache, response.body); // Atualiza o cache local
         return DiscoveryConfig.fromJson(jsonDecode(response.body));

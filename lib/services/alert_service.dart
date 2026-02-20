@@ -56,29 +56,38 @@ class AlertService {
         DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
 
     try {
-      final response = await http.get(
-        Uri.parse("$gasUrl?action=SYNC_ALERTS&since=$lastSync")
-      ).timeout(const Duration(seconds: 15));
+      // 🚀 1. CONSTRUÇÃO SEGURA DE URL (Garante o URL Encode de caracteres como ':')
+      final uriBase = Uri.parse(gasUrl);
+      final uriSegura = uriBase.replace(queryParameters: {
+        'action': 'SYNC_ALERTS',
+        'since': lastSync,
+      });
+
+      final response = await http.get(uriSegura).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        if (body['status'] == 'success') {
-          List<dynamic> rawList = body['data'];
+        
+        // 🚀 2. TRAVA DE SEGURANÇA: Só tenta ler se realmente for um JSON válido
+        if (response.body.trim().startsWith('{')) {
+          final body = jsonDecode(response.body);
           
-          if (rawList.isNotEmpty) {
-            // Converte o JSON bruto para nossa Classe segura
-            List<Alert> novosAlertas = rawList.map((j) => Alert.fromJson(j)).toList();
+          if (body['status'] == 'success') {
+            List<dynamic> rawList = body['data'];
             
-            print("🔔 ${novosAlertas.length} Novos Alertas recebidos do Servidor!");
-            
-            // Avisa a UI
-            _alertController.add(novosAlertas);
-            
-            // Atualiza o relógio para a próxima checagem
-            if (body['serverTime'] != null) {
-              await prefs.setString(_keyLastSync, body['serverTime']);
+            if (rawList.isNotEmpty) {
+              List<Alert> novosAlertas = rawList.map((j) => Alert.fromJson(j)).toList();
+              print("🔔 ${novosAlertas.length} Novos Alertas extraídos com sucesso!");
+              
+              _alertController.add(novosAlertas);
+              
+              if (body['serverTime'] != null) {
+                await prefs.setString(_keyLastSync, body['serverTime']);
+              }
             }
           }
+        } else {
+          // Se cair aqui, a URL ou a implantação do GAS ainda estão erradas
+          print("⚠️ Servidor não retornou JSON. Resposta: ${response.body}");
         }
       }
     } catch (e) {
