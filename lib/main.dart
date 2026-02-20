@@ -2,29 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'core/theme.dart';
 import 'services/auth_service.dart';
-import 'login_screen.dart'; // Importa a tela neon
+import 'login_screen.dart'; 
 import 'models/alert.dart';
 import 'services/alert_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 🚀 NOVO
 
-void main() {
+// Instância global de Notificações
+final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES (Configuração para Android)
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const InitializationSettings initializationSettings = InitializationSettings(
+    android: initializationSettingsAndroid,
+  );
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
   runApp(const MilhasAlertApp());
-}
-
-class MilhasAlertApp extends StatelessWidget {
-  const MilhasAlertApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'PlaMilhasAlert',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const SplashRouter(), // O guarda de trânsito
-    );
-  }
 }
 
 // ==========================================
@@ -148,7 +147,6 @@ void _iniciarMotorDeTracao() {
 
     _alertService.alertStream.listen((novosAlertas) async {
       if (mounted) {
-        // 🚀 1. Antes de atualizar a tela, verifica se ALGUNS dos NOVOS alertas passa no filtro
         List<Alert> novosQuePassaram = novosAlertas.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
 
         setState(() {
@@ -157,10 +155,11 @@ void _iniciarMotorDeTracao() {
           _isCarregando = false;
         });
 
-        // 🚀 2. TOCA O SOM! (Se chegou algo novo e não foi bloqueado pelo filtro)
+        // 🚀 TOCA O SOM E GERA O AVISO NO CELULAR!
         if (novosQuePassaram.isNotEmpty) {
           try {
             await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+            _mostrarNotificacao(novosQuePassaram.first); // Chama a notificação do primeiro card novo
           } catch (e) {
             print("Erro ao tocar som: $e");
           }
@@ -171,6 +170,26 @@ void _iniciarMotorDeTracao() {
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted && _isCarregando) setState(() => _isCarregando = false);
     });
+  }
+
+  // 🚀 FUNÇÃO QUE CRIA A NOTIFICAÇÃO NATIVA
+  Future<void> _mostrarNotificacao(Alert alerta) async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
+      'emissao_vip', // ID do Canal
+      'Emissões FãMilhas', // Nome do Canal
+      channelDescription: 'Avisos de novas passagens',
+      importance: Importance.max,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+    
+    await flutterLocalNotificationsPlugin.show(
+      alerta.id.hashCode, // ID Único
+      '✈️ ${alerta.programa} - Nova Oportunidade!', // Título
+      alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem, // Corpo
+      platformChannelSpecifics,
+    );
   }
 
   // 🚀 FUNÇÃO QUE CORTA A LISTA COM BASE NAS ESCOLHAS DO USUÁRIO

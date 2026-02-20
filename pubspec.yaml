@@ -42,6 +42,8 @@ dependencies:
 
   url_launcher: ^6.3.0   # Para abrir links externos, como o painel web ou redes sociais
 
+  flutter_local_notifications: ^17.0.1 # Para notificações locais (Fase 4)
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -61,7 +63,7 @@ flutter:
   uses-material-design: true
 
   assets:
-     - lib/assets/sounds/ # Sons para alertas (moved under lib)
+     - assets/sounds/ # Sons para alertas (moved under lib)
     #- assets/images/   # Imagens usadas na UI, como ícones e backgrounds
 
 
