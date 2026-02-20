@@ -252,7 +252,7 @@ void _iniciarMotorDeTracao() {
             Icon(Icons.radar, color: AppTheme.accent, size: 22),
             SizedBox(width: 8),
             Text(
-              "PLAMILHAS",
+              "FEED DE EMISSÕES",
               style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2, fontSize: 18),
             ),
             Text(
@@ -481,13 +481,178 @@ class _AlertCardState extends State<AlertCard> {
   }
 }
 
-class SmsScreen extends StatelessWidget {
+// ==========================================
+// TELA 3: SMS CONNECTOR (Painel de Operações)
+// ==========================================
+class SmsScreen extends StatefulWidget {
   const SmsScreen({super.key});
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text("💬 SMS CONNECTOR")),
-    body: const Center(child: Text("Módulo Legado", style: TextStyle(color: AppTheme.muted))),
-  );
+  State<SmsScreen> createState() => _SmsScreenState();
+}
+
+class _SmsScreenState extends State<SmsScreen> {
+  bool _isMonitoring = false;
+  
+  // 🚀 Simulador de Console (Ficará real quando ligarmos no Emulador)
+  final List<String> _logs = [
+    "[SISTEMA] Módulo de interceptação pronto.",
+    "[AVISO] Aguardando comando de inicialização...",
+  ];
+
+  void _toggleMonitoring() {
+    setState(() {
+      _isMonitoring = !_isMonitoring;
+      String hora = "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
+      
+      if (_isMonitoring) {
+        _logs.insert(0, "[$hora] 🟢 Monitoramento NATIVO ATIVADO.");
+        _logs.insert(0, "[$hora] 📡 Escutando porta SMS de entrada...");
+      } else {
+        _logs.insert(0, "[$hora] 🔴 Monitoramento PAUSADO pelo usuário.");
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        // 🚀 CABEÇALHO PADRONIZADO
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sms, color: AppTheme.accent, size: 22),
+            SizedBox(width: 8),
+            Text("SMS", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
+            Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+          ],
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 🚀 STATUS CARD (Indicador de Funcionamento)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+              decoration: BoxDecoration(
+                color: AppTheme.card, 
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: !_isMonitoring ? AppTheme.red.withOpacity(0.3) : AppTheme.green.withOpacity(0.3)),
+                boxShadow: [
+                  BoxShadow(
+                    color: !_isMonitoring ? AppTheme.red.withOpacity(0.05) : AppTheme.green.withOpacity(0.05),
+                    blurRadius: 20, spreadRadius: 5
+                  )
+                ]
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    _isMonitoring ? Icons.satellite_alt : Icons.portable_wifi_off, 
+                    size: 60, 
+                    color: _isMonitoring ? AppTheme.green : AppTheme.muted
+                  ).animate(target: _isMonitoring ? 1 : 0).shimmer(duration: 2.seconds, color: Colors.white24),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 12, height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle, 
+                          color: !_isMonitoring ? AppTheme.red : AppTheme.green,
+                          boxShadow: [BoxShadow(color: !_isMonitoring ? AppTheme.red : AppTheme.green, blurRadius: 10)]
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _isMonitoring ? "MONITORANDO MENSAGENS" : "SISTEMA PAUSADO", 
+                        style: TextStyle(
+                          fontSize: 14, 
+                          fontWeight: FontWeight.w900, 
+                          letterSpacing: 1.5,
+                          color: !_isMonitoring ? AppTheme.red : AppTheme.green
+                        )
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // 🚀 BOTÃO DE IGNIÇÃO
+            SizedBox(
+              width: double.infinity,
+              height: 60,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isMonitoring ? AppTheme.card : AppTheme.accent,
+                  foregroundColor: _isMonitoring ? AppTheme.red : Colors.white,
+                  side: _isMonitoring ? const BorderSide(color: AppTheme.red) : null,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: _isMonitoring ? 0 : 10,
+                  shadowColor: AppTheme.accent.withOpacity(0.5),
+                ),
+                icon: Icon(_isMonitoring ? Icons.stop_circle : Icons.play_circle_fill, size: 24),
+                label: Text(
+                  _isMonitoring ? "DESLIGAR CAPTURA" : "INICIAR CAPTURA NATIVA",
+                  style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 14),
+                ),
+                onPressed: _toggleMonitoring,
+              ),
+            ),
+            const SizedBox(height: 30),
+
+            // 🚀 CONSOLE DE LOGS (Estilo Terminal)
+            const Row(
+              children: [
+                Icon(Icons.terminal, color: AppTheme.muted, size: 18),
+                SizedBox(width: 8),
+                Text("CONSOLE DE ATIVIDADES", style: TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 11)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF030508), // Fundo quase preto para dar cara de prompt
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.border),
+                ),
+                child: ListView.builder(
+                  itemCount: _logs.length,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6.0),
+                      child: SelectableText(
+                        _logs[index],
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: _logs[index].contains("🔴") 
+                              ? AppTheme.red 
+                              : _logs[index].contains("🟢") || _logs[index].contains("📡")
+                                  ? AppTheme.green 
+                                  : AppTheme.muted,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ==========================================
@@ -587,8 +752,8 @@ void _fazerLogoff() async {
           children: [
             Icon(Icons.badge, color: AppTheme.accent, size: 22),
             SizedBox(width: 8),
-            Text("MINHA ", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
-            Text("SESSÃO", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+            Text("SESSÃO ", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
+            Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
           ],
         ),
         actions: [
