@@ -5,9 +5,15 @@ import 'package:uuid/uuid.dart';
 import 'discovery_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+/// Define os possíveis estados de autorização do usuário.
 enum AuthStatus { autorizado, bloqueado, erroRede }
 
+/// Serviço responsável pelo gerenciamento de identidade, login e licenciamento.
+///
+/// Este serviço lida com a persistência de dados sensíveis e a comunicação
+/// de segurança com o servidor/planilha.
 class AuthService {
+  // Chaves para o SharedPreferences (Analogia: Nomes das chaves no localStorage do JS)
   static const String _keyDeviceId = "DEVICE_ID_V2";
   static const String _keyLastCheck = "LAST_LICENSE_CHECK_DATE";
   
@@ -18,18 +24,21 @@ class AuthService {
   static const String _keyVencimento = "USER_VENCIMENTO";
   static const String _keyIdPlanilha = "USER_ID_PLANILHA";
   
-  // Chaves de "Histórico" (Para manter os inputs preenchidos após deslogar)
+  // Chaves de "Histórico" (Para preencher os campos automaticamente no próximo login)
   static const String _keyLastEmail = "LAST_LOGGED_EMAIL";
   static const String _keyLastToken = "LAST_LOGGED_TOKEN";
   
   final DiscoveryService _discovery = DiscoveryService();
 
+  /// Recupera ou gera um Identificador Único para o aparelho.
+  ///
+  /// Analogia: Funciona como um "Fingerprint" do navegador ou um ID de hardware em C#.
   Future<String> getDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     String? id = prefs.getString(_keyDeviceId);
     
     if (id == null) {
-      // 🚀 ASSINATURA DE PLATAFORMA: Se for Web começa com "WEB_", senão "APP_"
+      // 🚀 ASSINATURA DE PLATAFORMA: Identifica se o acesso vem da Web ou do App nativo.
       String prefixo = kIsWeb ? "WEB_" : "APP_";
       id = "$prefixo${const Uuid().v4()}"; 
       
@@ -38,11 +47,16 @@ class AuthService {
     return id;
   }
 
+  /// Verifica se é a primeira vez que o usuário abre o app (ou se está deslogado).
   Future<bool> isFirstUse() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyToken) == null; // Se não tem token ativo, é "primeiro uso"
+    return prefs.getString(_keyToken) == null;
   }
 
+  /// Salva as informações do usuário no armazenamento local.
+  ///
+  /// Analogia: Similar a gravar um dicionário Python em um arquivo `.json`
+  /// ou usar o `localStorage.setItem()` no JavaScript.
   Future<void> salvarLoginLocal(String email, String token, String usuario, String vencimento, String idPlanilha) async {
     final prefs = await SharedPreferences.getInstance();
     // Salva sessão ativa
@@ -52,13 +66,14 @@ class AuthService {
     await prefs.setString(_keyVencimento, vencimento);
     await prefs.setString(_keyIdPlanilha, idPlanilha);
     
-    // Salva no histórico (memória do input)
+    // Salva no histórico para facilitar o próximo login do usuário
     await prefs.setString(_keyLastEmail, email);
     await prefs.setString(_keyLastToken, token);
     
     await prefs.remove(_keyLastCheck); 
   }
 
+  /// Recupera os dados do usuário logado.
   Future<Map<String, String>> getDadosUsuario() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -70,7 +85,7 @@ class AuthService {
     };
   }
 
-  // 🚀 NOVO: Recupera o histórico para a tela de login
+  /// Recupera o histórico de e-mail e token para a tela de login.
   Future<Map<String, String>> getLastLoginData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -79,6 +94,7 @@ class AuthService {
     };
   }
 
+  /// Valida se o acesso ainda está autorizado para o dia de hoje.
   Future<AuthStatus> validarAcessoDiario() async {
     final prefs = await SharedPreferences.getInstance();
     String hoje = DateTime.now().toIso8601String().split('T')[0]; 
@@ -89,6 +105,10 @@ class AuthService {
     return AuthStatus.autorizado;
   }
 
+  /// Tenta autenticar o usuário enviando o e-mail, token e ID do dispositivo para o servidor.
+  ///
+  /// Analogia: Realiza um `POST` para a API, similar ao que fazemos com `axios.post()` no JS
+  /// ou `requests.post()` no Python.
   Future<Map<String, dynamic>> autenticarNoServidor(String email, String token) async {
     String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
     if (url == null) return {"sucesso": false, "mensagem": "Falha de rede."};
@@ -104,7 +124,7 @@ class AuthService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['status'] == 'success') {
-          // Passando os novos dados retornados pela planilha
+          // Atualiza os dados locais com a resposta de sucesso do servidor
           await salvarLoginLocal(
             email, 
             token, 
@@ -123,7 +143,8 @@ class AuthService {
     }
   }
 
-  // 🚀 REMOVE DA PLANILHA SEM LIMPAR O CELULAR/NAVEGADOR
+  /// Encerra a sessão no servidor sem limpar os dados locais do usuário.
+  /// Utilizado principalmente na Web ao fechar a aba.
   Future<void> logoutSilencioso() async {
     String deviceId = await getDeviceId();
     try {
@@ -141,11 +162,12 @@ class AuthService {
     }
   }
 
-Future<bool> logout() async {
+  /// Realiza o logout completo, avisando o servidor e limpando a sessão local.
+  Future<bool> logout() async {
     final prefs = await SharedPreferences.getInstance();
     String deviceId = await getDeviceId();
 
-    // 1. Tenta avisar a planilha para liberar o Slot
+    // 1. Tenta avisar a planilha para liberar o "Slot" de conexão deste aparelho
     try {
       String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
       if (url != null) {
@@ -159,7 +181,7 @@ Future<bool> logout() async {
       print("⚠️ Erro ao remover aparelho da planilha. Deslogando localmente...");
     }
 
-    // 2. Limpa os dados da sessão localmente
+    // 2. Limpa os dados da sessão localmente (Analogia: `localStorage.clear()`)
     await prefs.remove(_keyToken);
     await prefs.remove(_keyEmail);
     await prefs.remove(_keyUsuario);

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🚀 IMPORTANTE PARA O CLIPBOARD (COPIAR/COLAR)
+import 'package:flutter/services.dart'; // 🚀 Importante para acessar a área de transferência (Clipboard)
 import 'core/theme.dart';
 import 'services/auth_service.dart';
 import 'main.dart'; 
 
+/// Tela de Login e Ativação do Aplicativo.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -12,6 +13,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Controladores para capturar o texto dos inputs.
+  // Analogia: Similar ao `document.getElementById('id').value` ou refs no React.
   final _emailController = TextEditingController();
   final _tokenController = TextEditingController();
   final AuthService _auth = AuthService();
@@ -23,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
     _carregarMemoriaDosInputs();
   }
 
+  /// Recupera o último e-mail e token utilizados para facilitar o re-login.
   void _carregarMemoriaDosInputs() async {
     final dadosViejos = await _auth.getLastLoginData();
     if (dadosViejos['email']!.isNotEmpty) {
@@ -33,7 +37,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // 🚀 FUNÇÃO PARA COLAR TEXTO DA ÁREA DE TRANSFERÊNCIA
+  /// 🚀 FUNÇÃO PARA COLAR TEXTO DA ÁREA DE TRANSFERÊNCIA
+  ///
+  /// Analogia: Facilita a vida do usuário permitindo colar a chave de licença
+  /// direto do WhatsApp/E-mail, similar ao comando `navigator.clipboard.readText()` no JS.
   void _colarDoClipboard(TextEditingController controller) async {
     ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data != null && data.text != null) {
@@ -52,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Tenta realizar a autenticação no servidor.
   void _ativarSistema() async {
     if (_emailController.text.trim().isEmpty || _tokenController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -76,6 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(content: Text("✅ ${resultado['mensagem']}"), backgroundColor: AppTheme.green)
       );
       
+      // Navega para a tela principal e remove a tela de login da pilha (não volta ao apertar 'back').
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const MainNavigator()),
@@ -90,14 +99,14 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bg, // 🚀 Unificando o fundo
+      backgroundColor: AppTheme.bg,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 🚀 TÍTULO ESTILO RADAR VIP (Super Bold)
+              // 🚀 LOGOTIPO ESTILO CYBERPUNK
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -127,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // CAIXA DE STATUS (Estilo Painel)
+              // Indicador de Segurança
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
@@ -149,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 30),
 
-              // INPUT: E-MAIL (Estilo Filtro)
+              // Campo de E-mail
               TextField(
                 controller: _emailController,
                 style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -171,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 16),
 
-              // INPUT: CHAVE (TOKEN) COM BOTÃO COLAR
+              // Campo de Chave (Token) com suporte a Colar
               TextField(
                 controller: _tokenController,
                 style: const TextStyle(color: Colors.white, letterSpacing: 2, fontSize: 14),
@@ -181,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   filled: true,
                   fillColor: AppTheme.card,
                   prefixIcon: const Icon(Icons.key, color: AppTheme.muted, size: 20),
-                  // 🚀 BOTÃO DE COLAR AQUI
+                  // 🚀 BOTÃO DE COLAR: Atalho rápido para preenchimento.
                   suffixIcon: IconButton(
                     icon: const Icon(Icons.content_paste, color: AppTheme.accent, size: 20),
                     tooltip: "Colar Licença",
@@ -199,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 40),
 
-              // BOTÃO ATIVAR (Cyberpunk)
+              // Botão de Ativação
               SizedBox(
                 width: double.infinity,
                 height: 55,

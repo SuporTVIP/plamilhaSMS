@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Configurações para o Modo de Economia (Redução de tráfego em horários de baixo uso).
 class EconomyMode {
   final bool enabled;
   final String startTime;
@@ -20,6 +21,7 @@ class EconomyMode {
     );
   }
 
+  /// Verifica se o horário atual está dentro da janela de economia.
   bool isEconomyTime(DateTime now) {
     if (!enabled) return false;
     try {
@@ -36,6 +38,7 @@ class EconomyMode {
   }
 }
 
+/// Representa o objeto de configuração obtido remotamente.
 class DiscoveryConfig {
   final String gasUrl;
   final String status;
@@ -55,7 +58,7 @@ class DiscoveryConfig {
 
   bool get isActive => status == 'active';
 
-  // Retorna o tempo real baseando-se na hora atual
+  /// Retorna o tempo real de espera baseado na hora atual e no modo de economia.
   int get currentPollingInterval {
     if (economyMode.isEconomyTime(DateTime.now())) {
       return pollingIntervalSeconds * economyMode.multiplier;
@@ -64,29 +67,38 @@ class DiscoveryConfig {
   }
 }
 
+/// Serviço de "Discovery" que descobre onde o servidor principal está hospedado.
+///
+/// Analogia: Funciona como um "Remote Config" do Firebase ou uma busca dinâmica de DNS.
+/// Ele permite mudar a URL do servidor ou o intervalo de busca sem precisar atualizar o App na loja.
 class DiscoveryService {
+  // URL do Gist que contém as configurações em formato JSON.
   static const String _discoveryUrl = "https://gist.githubusercontent.com/SuporTVIP/ffb616b4d3b24af5071c10c9be2e6895/raw/sms_discovery.json";
   static const String _keyCache = "DISCOVERY_CACHE_V2";
 
+  /// Obtém a configuração atual, tentando primeiro a internet e depois o cache local.
   Future<DiscoveryConfig?> getConfig() async {
     final prefs = await SharedPreferences.getInstance();
     
     try {
-      // Adiciona a hora atual na URL do Gist para o GitHub ser forçado a entregar a versão mais nova
+      // Adicionamos um parâmetro de tempo (?v=...) na URL para forçar o GitHub a
+      // ignorar o cache do navegador e entregar a versão mais nova.
       final urlSemCache = "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
       final response = await http.get(Uri.parse(urlSemCache)).timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
-        await prefs.setString(_keyCache, response.body); // Atualiza o cache local
+        // Atualiza o cache local (Analogia: SharedPreferences = localStorage do JS)
+        await prefs.setString(_keyCache, response.body);
         return DiscoveryConfig.fromJson(jsonDecode(response.body));
       }
     } catch (e) {
       print("⚠️ Erro ao acessar Gist. Tentando cache local...");
     }
 
-    // Fallback: Se estiver sem internet, usa o que estava salvo
+    // Fallback: Se estiver sem internet, usa o que foi salvo na última vez que funcionou.
     final cached = prefs.getString(_keyCache);
     if (cached != null) return DiscoveryConfig.fromJson(jsonDecode(cached));
     
-    return null; // Sistema crítico offline
+    return null; // Sistema crítico offline (sem cache e sem rede)
   }
 }
