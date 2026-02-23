@@ -8,16 +8,20 @@ import 'services/alert_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 🚀 NOVO
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'utils/web_window_manager.dart';
 
-// Instância global de Notificações
+// Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
+/// Ponto de entrada do aplicativo.
+///
+/// Analogia: Equivale ao `main()` em C# ou Java, ou ao início do script global no JS.
 void main() async {
+  // Garante que os recursos nativos do Flutter estejam prontos.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES (Configuração para Android)
+  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES (Configuração específica para Android)
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
@@ -28,8 +32,11 @@ void main() async {
 }
 
 // ==========================================
-// APP ROOT (MaterialApp com Tema)
+// APP ROOT
 // ==========================================
+/// O "Raiz" do aplicativo, onde definimos o tema e a tela inicial.
+///
+/// Analogia: Widgets são como Componentes no React ou Elementos no HTML.
 class MilhasAlertApp extends StatelessWidget {
   const MilhasAlertApp({super.key});
 
@@ -37,19 +44,21 @@ class MilhasAlertApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Milhas Alert',
+      // Aplicamos o tema customizado que definimos em core/theme.dart
       theme: ThemeData.dark().copyWith(
         primaryColor: AppTheme.accent,
         scaffoldBackgroundColor: AppTheme.bg,
       ),
-      home: const SplashRouter(),
+      home: const SplashRouter(), // Define qual tela abre primeiro
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 // ==========================================
-// ROTEADOR INICIAL (Verifica se já logou)
+// ROTEADOR INICIAL
 // ==========================================
+/// Tela de transição (Splash) que decide se o usuário vai para o Login ou para o App.
 class SplashRouter extends StatefulWidget {
   const SplashRouter({super.key});
 
@@ -58,6 +67,9 @@ class SplashRouter extends StatefulWidget {
 }
 
 class _SplashRouterState extends State<SplashRouter> {
+  /// Ciclo de Vida: Chamado assim que o Widget é inserido na árvore.
+  ///
+  /// Analogia: Similar ao `useEffect(() => ..., [])` no React ou `OnInit` no Angular/C#.
   @override
   void initState() {
     super.initState();
@@ -67,11 +79,12 @@ class _SplashRouterState extends State<SplashRouter> {
   void _checkLogin() async {
     bool firstUse = await AuthService().isFirstUse();
     
-    // Pequeno delay para a tela não piscar agressivamente
+    // Pequeno delay para a tela não "piscar" rapidamente.
     await Future.delayed(const Duration(milliseconds: 500));
 
     if (mounted) {
       if (firstUse) {
+        // Redireciona para login (Analogia: Router.push no JS)
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
       } else {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigator()));
@@ -91,6 +104,7 @@ class _SplashRouterState extends State<SplashRouter> {
 // ==========================================
 // CONTROLADOR DE NAVEGAÇÃO (As 3 Abas)
 // ==========================================
+/// Gerencia a navegação por abas (Bottom Navigation Bar).
 class MainNavigator extends StatefulWidget {
   const MainNavigator({super.key});
 
@@ -99,7 +113,7 @@ class MainNavigator extends StatefulWidget {
 }
 
 class _MainNavigatorState extends State<MainNavigator> {
-  int _currentIndex = 1; // Começa na Licença
+  int _currentIndex = 1; // Começa na aba central (Licença)
 
   final List<Widget> _screens = [
     const AlertsScreen(),
@@ -107,10 +121,10 @@ class _MainNavigatorState extends State<MainNavigator> {
     const SmsScreen(),
   ];
 
-@override
+  @override
   void initState() {
     super.initState();
-    // 🚀 Chama a função que se adapta automaticamente (Faz nada no celular, desloga na Web)
+    // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
   }
 
@@ -126,6 +140,8 @@ class _MainNavigatorState extends State<MainNavigator> {
         selectedItemColor: AppTheme.accent,
         unselectedItemColor: AppTheme.muted,
         currentIndex: _currentIndex,
+        // setState: Redesenha a tela para mostrar a aba selecionada.
+        // Analogia: Similar ao `useState` no React (atualiza o valor e re-renderiza).
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.flight_takeoff), label: "Alertas"),
@@ -137,10 +153,10 @@ class _MainNavigatorState extends State<MainNavigator> {
   }
 }
 
-// --- PLACEHOLDERS ---
 // ==========================================
 // TELA 1: ALERTAS (Feed em Tempo Real)
 // ==========================================
+/// Exibe a lista de oportunidades de milhas.
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
@@ -150,19 +166,18 @@ class AlertsScreen extends StatefulWidget {
 
 class _AlertsScreenState extends State<AlertsScreen> {
   final AlertService _alertService = AlertService();
-  final List<Alert> _listaAlertasTodos = []; // Guarda TODOS os alertas da planilha
-  List<Alert> _listaAlertasFiltrados = [];   // O que realmente aparece na tela
+  final List<Alert> _listaAlertasTodos = []; // Todos os dados recebidos
+  List<Alert> _listaAlertasFiltrados = [];   // Apenas o que passa no filtro
   bool _isCarregando = true;
   
-  UserFilters _filtros = UserFilters(); // 🚀 Instância dos Filtros
+  UserFilters _filtros = UserFilters();
 
-  // 🚀 O REPRODUTOR DE ÁUDIO
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
-    _carregarFiltros(); // Puxa da memória primeiro
+    _carregarFiltros();
   }
 
   void _carregarFiltros() async {
@@ -170,11 +185,14 @@ class _AlertsScreenState extends State<AlertsScreen> {
     _iniciarMotorDeTracao();
   }
 
-void _iniciarMotorDeTracao() {
+  /// Inicia a escuta da Stream de alertas.
+  void _iniciarMotorDeTracao() {
     _alertService.startMonitoring();
 
+    // Se inscreve na Stream (Analogia: .subscribe() no RxJS ou addEventListener no JS).
     _alertService.alertStream.listen((novosAlertas) async {
       if (mounted) {
+        // Filtra os alertas em tempo real
         List<Alert> novosQuePassaram = novosAlertas.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
 
         setState(() {
@@ -183,11 +201,11 @@ void _iniciarMotorDeTracao() {
           _isCarregando = false;
         });
 
-        // 🚀 TOCA O SOM E GERA O AVISO NO CELULAR!
+        // 🚀 Feedback Sonoro e Visual (Notificação)
         if (novosQuePassaram.isNotEmpty) {
           try {
             await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
-            _mostrarNotificacao(novosQuePassaram.first); // Chama a notificação do primeiro card novo
+            _mostrarNotificacao(novosQuePassaram.first);
           } catch (e) {
             print("Erro ao tocar som: $e");
           }
@@ -195,16 +213,17 @@ void _iniciarMotorDeTracao() {
       }
     });
 
+    // Timeout de segurança para remover o loading se não houver internet.
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted && _isCarregando) setState(() => _isCarregando = false);
     });
   }
 
-  // 🚀 FUNÇÃO QUE CRIA A NOTIFICAÇÃO NATIVA
+  /// Gera uma notificação nativa no sistema operacional.
   Future<void> _mostrarNotificacao(Alert alerta) async {
     const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'emissao_vip', // ID do Canal
-      'Emissões FãMilhas', // Nome do Canal
+      'emissao_vip',
+      'Emissões FãMilhas',
       channelDescription: 'Avisos de novas passagens',
       importance: Importance.max,
       priority: Priority.high,
@@ -213,37 +232,40 @@ void _iniciarMotorDeTracao() {
     const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
     
     await flutterLocalNotificationsPlugin.show(
-      alerta.id.hashCode, // ID Único
-      '✈️ ${alerta.programa} - Nova Oportunidade!', // Título
-      alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem, // Corpo
+      alerta.id.hashCode,
+      '✈️ ${alerta.programa} - Nova Oportunidade!',
+      alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem,
       platformChannelSpecifics,
     );
   }
 
-  // 🚀 FUNÇÃO QUE CORTA A LISTA COM BASE NAS ESCOLHAS DO USUÁRIO
+  /// Atualiza a lista exibida com base nos filtros configurados.
   void _aplicarFiltrosNaTela() {
     setState(() {
       _listaAlertasFiltrados = _listaAlertasTodos.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
     });
   }
 
+  /// Ciclo de Vida: Chamado quando o Widget é destruído.
+  ///
+  /// Analogia: Equivale ao retorno de uma função no `useEffect` do React (cleanup).
   @override
   void dispose() {
     _alertService.stopMonitoring();
     super.dispose();
   }
 
-  // 🚀 AÇÃO DO BOTÃO DE CIMA: ABRE O PAINEL E ESCUTA A RESPOSTA
+  /// Abre o painel inferior para configuração de filtros.
   void _abrirPainelFiltros() {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Permite que o teclado empurre a tela
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => FilterBottomSheet(
         filtrosAtuais: _filtros,
         onFiltrosSalvos: (novosFiltros) {
           _filtros = novosFiltros;
-          _aplicarFiltrosNaTela(); // Atualiza a lista na hora que fecha o painel
+          _aplicarFiltrosNaTela();
         },
       ),
     );
@@ -253,7 +275,6 @@ void _iniciarMotorDeTracao() {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // 🚀 CABEÇALHO ESTILIZADO CYBERPUNK
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -271,15 +292,15 @@ void _iniciarMotorDeTracao() {
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent), // Fica verde se tiver filtro ativo
+            icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent),
             tooltip: "Filtros",
-            onPressed: _abrirPainelFiltros, // 🚀 Chama o painel
+            onPressed: _abrirPainelFiltros,
           )
         ],
       ),
       body: _isCarregando
           ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
-          : _listaAlertasFiltrados.isEmpty // Muda para usar a lista filtrada
+          : _listaAlertasFiltrados.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -293,7 +314,7 @@ void _iniciarMotorDeTracao() {
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _listaAlertasFiltrados.length, // Usa a lista filtrada
+                  itemCount: _listaAlertasFiltrados.length,
                   itemBuilder: (context, index) {
                     final alerta = _listaAlertasFiltrados[index];
                     return AlertCard(alerta: alerta);
@@ -304,8 +325,9 @@ void _iniciarMotorDeTracao() {
 }
 
 // ==========================================
-// COMPONENTE: CARD DO ALERTA (Retrátil e Elegante)
+// COMPONENTE: CARD DO ALERTA
 // ==========================================
+/// Exibe as informações de um único alerta em um card expansível.
 class AlertCard extends StatefulWidget {
   final Alert alerta;
   const AlertCard({super.key, required this.alerta});
@@ -317,11 +339,12 @@ class AlertCard extends StatefulWidget {
 class _AlertCardState extends State<AlertCard> {
   bool _isExpanded = false;
 
+  /// Tenta abrir o link de emissão no navegador externo.
   void _abrirLink() async {
     if (widget.alerta.link == null || widget.alerta.link!.isEmpty) return;
     final Uri url = Uri.parse(widget.alerta.link!);
     if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication); // Abre no navegador do celular
+      await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link.")));
     }
@@ -329,20 +352,20 @@ class _AlertCardState extends State<AlertCard> {
 
   @override
   Widget build(BuildContext context) {
-    // 🎨 PALETA DE CORES SUTIL (Cyberpunk Dark)
     Color corPrincipal = AppTheme.accent;
     Color corFundo = AppTheme.card;
     
     final prog = widget.alerta.programa.toUpperCase();
+    // Lógica visual dinâmica baseada na companhia aérea.
     if (prog.contains("AZUL")) {
-      corPrincipal = const Color(0xFF38BDF8); // Azul claro
-      corFundo = const Color(0xFF0C1927);     // Fundo com tintura azul muito escuro
+      corPrincipal = const Color(0xFF38BDF8);
+      corFundo = const Color(0xFF0C1927);
     } else if (prog.contains("LATAM")) {
-      corPrincipal = const Color(0xFFF43F5E); // Vermelho/Rosa
-      corFundo = const Color(0xFF230D14);     // Fundo com tintura vermelha
+      corPrincipal = const Color(0xFFF43F5E);
+      corFundo = const Color(0xFF230D14);
     } else if (prog.contains("SMILES")) {
-      corPrincipal = const Color(0xFFF59E0B); // Laranja
-      corFundo = const Color(0xFF22160A);     // Fundo com tintura laranja
+      corPrincipal = const Color(0xFFF59E0B);
+      corFundo = const Color(0xFF22160A);
     }
 
     String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
@@ -359,16 +382,15 @@ class _AlertCardState extends State<AlertCard> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _isExpanded = !_isExpanded), // 🚀 Expande/Recolhe
+        onTap: () => setState(() => _isExpanded = !_isExpanded),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🔹 CABEÇALHO RESUMIDO (Sempre Visível)
+            // 🔹 CABEÇALHO (Sempre Visível)
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Ícone da Companhia
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(color: corPrincipal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
@@ -376,7 +398,6 @@ class _AlertCardState extends State<AlertCard> {
                   ),
                   const SizedBox(width: 12),
                   
-                  // Info Principal (Trecho e Milhas)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -398,7 +419,6 @@ class _AlertCardState extends State<AlertCard> {
                     ),
                   ),
                   
-                  // Hora e Seta
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -411,7 +431,7 @@ class _AlertCardState extends State<AlertCard> {
               ),
             ),
 
-            // 🔹 DETALHES EXPANDIDOS (Aparece ao clicar)
+            // 🔹 DETALHES (Visível apenas se expandido)
             if (_isExpanded)
               Container(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -420,7 +440,6 @@ class _AlertCardState extends State<AlertCard> {
                   children: [
                     const Divider(color: AppTheme.border, height: 20),
                     
-                    // Grid de Dados Extraídos (Metadados)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -432,7 +451,6 @@ class _AlertCardState extends State<AlertCard> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Texto Original Oculto (Apenas para contexto se o usuário quiser ler tudo)
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
@@ -444,7 +462,6 @@ class _AlertCardState extends State<AlertCard> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 🚀 BOTÃO DE IR PARA O SITE
                     if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
                       SizedBox(
                         width: double.infinity,
@@ -469,7 +486,6 @@ class _AlertCardState extends State<AlertCard> {
     );
   }
 
-  // Widget ajudante para as coluninhas de dados
   Widget _buildInfoColumn(String titulo, String valor, {bool isHighlight = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,8 +506,9 @@ class _AlertCardState extends State<AlertCard> {
 }
 
 // ==========================================
-// TELA 3: SMS CONNECTOR (Painel de Operações)
+// TELA 3: SMS CONNECTOR
 // ==========================================
+/// Painel de monitoramento de SMS (Funcionalidade Nativa).
 class SmsScreen extends StatefulWidget {
   const SmsScreen({super.key});
 
@@ -502,12 +519,13 @@ class SmsScreen extends StatefulWidget {
 class _SmsScreenState extends State<SmsScreen> {
   bool _isMonitoring = false;
   
-  // 🚀 Simulador de Console (Ficará real quando ligarmos no Emulador)
+  // Simulador de Console (Terminal de Logs)
   final List<String> _logs = [
     "[SISTEMA] Módulo de interceptação pronto.",
     "[AVISO] Aguardando comando de inicialização...",
   ];
 
+  /// Alterna o estado do monitoramento.
   void _toggleMonitoring() {
     setState(() {
       _isMonitoring = !_isMonitoring;
@@ -526,7 +544,6 @@ class _SmsScreenState extends State<SmsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // 🚀 CABEÇALHO PADRONIZADO
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -542,7 +559,7 @@ class _SmsScreenState extends State<SmsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 🚀 STATUS CARD (Indicador de Funcionamento)
+            // Status Card com Animação
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
@@ -573,7 +590,6 @@ class _SmsScreenState extends State<SmsScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle, 
                           color: !_isMonitoring ? AppTheme.red : AppTheme.green,
-                          boxShadow: [BoxShadow(color: !_isMonitoring ? AppTheme.red : AppTheme.green, blurRadius: 10)]
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -593,7 +609,6 @@ class _SmsScreenState extends State<SmsScreen> {
             ),
             const SizedBox(height: 24),
 
-            // 🚀 BOTÃO DE IGNIÇÃO
             SizedBox(
               width: double.infinity,
               height: 60,
@@ -616,7 +631,7 @@ class _SmsScreenState extends State<SmsScreen> {
             ),
             const SizedBox(height: 30),
 
-            // 🚀 CONSOLE DE LOGS (Estilo Terminal)
+            // Estilo Terminal (Prompt de Comando)
             const Row(
               children: [
                 Icon(Icons.terminal, color: AppTheme.muted, size: 18),
@@ -630,7 +645,7 @@ class _SmsScreenState extends State<SmsScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF030508), // Fundo quase preto para dar cara de prompt
+                  color: const Color(0xFF030508),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppTheme.border),
                 ),
@@ -664,8 +679,9 @@ class _SmsScreenState extends State<SmsScreen> {
 }
 
 // ==========================================
-// TELA 2: LICENÇA (O Dashboard com botão Sair)
+// TELA 2: LICENÇA (Dashboard)
 // ==========================================
+/// Exibe informações sobre a licença do usuário e o status do sistema.
 class LicenseScreen extends StatefulWidget {
   const LicenseScreen({super.key});
 
@@ -683,7 +699,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
   String _userIdPlanilha = "...";
   String _statusConexao = "Verificando Servidor...";
   bool _isBloqueado = false;
-  bool _isSaindo = false; // Flag para evitar múltiplos cliques no botão de logoff
+  bool _isSaindo = false;
 
   @override
   void initState() {
@@ -691,6 +707,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
     _inicializarSistema();
   }
 
+  /// Carrega os dados necessários para exibir na tela de licença.
   void _inicializarSistema() async {
     setState(() => _statusConexao = "Validando Licença...");
     String id = await _auth.getDeviceId();
@@ -701,60 +718,53 @@ class _LicenseScreenState extends State<LicenseScreen> {
       _deviceId = id;
       _userToken = dados['token']!;
       _userEmail = dados['email']!;
-      _userUsuario = dados['usuario']!; // Exibe o nome do usuário
-      _userVencimento = dados['vencimento']!; // Exibe o vencimento
-      _userIdPlanilha = dados['idPlanilha']!; // Exibe o ID da planilha para debug
+      _userUsuario = dados['usuario']!;
+      _userVencimento = dados['vencimento']!;
+      _userIdPlanilha = dados['idPlanilha']!;
 
       _isBloqueado = (status != AuthStatus.autorizado);
       _statusConexao = (status == AuthStatus.autorizado) ? "Serviço Ativo" : "⛔ BLOQUEADO";
     });
   }
 
-void _fazerLogoff() async {
-    setState(() => _isSaindo = true); // Ativa o loading
-    await _auth.logout(); // Aguarda a planilha ser limpa
+  void _fazerLogoff() async {
+    setState(() => _isSaindo = true);
+    await _auth.logout();
     if (mounted) {
       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const SplashRouter()));
     }
   }
 
-  // 🚀 LÓGICA DE CORES DA LICENÇA (Inteligência de Datas)
+  /// Lógica de cores para indicar a proximidade do vencimento.
   Color _getCorVencimento(String dataVencimentoStr) {
     if (dataVencimentoStr == "..." || dataVencimentoStr == "N/A") return AppTheme.muted;
 
     try {
-      // Divide a string "DD/MM/YYYY"
       List<String> partes = dataVencimentoStr.split('/');
       if (partes.length != 3) return AppTheme.muted;
 
-      // Cria os objetos de data comparáveis (ano, mês, dia)
       DateTime validade = DateTime(int.parse(partes[2]), int.parse(partes[1]), int.parse(partes[0]));
       DateTime hoje = DateTime.now();
-      
-      // Zera as horas para comparar apenas os dias úteis
       hoje = DateTime(hoje.year, hoje.month, hoje.day);
       
-      // Calcula a diferença em dias
       int diasRestantes = validade.difference(hoje).inDays;
 
       if (diasRestantes <= 3) {
-        return AppTheme.red; // 🔴 0 a 3 dias (Crítico)
+        return AppTheme.red; // Crítico
       } else if (diasRestantes <= 7) {
-        return AppTheme.yellow; // 🟡 4 a 7 dias (Alerta) - Laranja/Amarelo
+        return AppTheme.yellow; // Alerta
       } else {
-        return AppTheme.green; // 🟢 Mais de 7 dias (Tranquilo)
+        return AppTheme.green; // Saudável
       }
     } catch (e) {
-      return AppTheme.muted; // Fallback em caso de erro na string
+      return AppTheme.muted;
     }
   }
 
-
-@override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // 🚀 CABEÇALHO PADRONIZADO IGUAL AO DO ALERTA
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -772,7 +782,7 @@ void _fazerLogoff() async {
         padding: const EdgeInsets.all(20.0),
         child: Column(
           children: [
-            // Status do Serviço (Elevado)
+            // Card de Status
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
@@ -789,7 +799,6 @@ void _fazerLogoff() async {
               ),
               child: Column(
                 children: [
-                  // Avatar
                   Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -806,7 +815,6 @@ void _fazerLogoff() async {
                   ),
                   const SizedBox(height: 20),
                   
-                  // Status
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -815,7 +823,6 @@ void _fazerLogoff() async {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle, 
                           color: _isBloqueado ? AppTheme.red : AppTheme.green,
-                          boxShadow: [BoxShadow(color: _isBloqueado ? AppTheme.red : AppTheme.green, blurRadius: 10)]
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -835,7 +842,7 @@ void _fazerLogoff() async {
             ),
             const SizedBox(height: 20),
             
-            // Info Expanded (Visual Clean)
+            // Grid de Informações
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -849,26 +856,20 @@ void _fazerLogoff() async {
                 children: [
                   _buildInfoRow("USUÁRIO", _userUsuario, valueColor: Colors.white),
                   const Divider(color: AppTheme.border, height: 30),
-                  
                   _buildInfoRow("LICENÇA", _userToken, valueColor: AppTheme.accent, isMono: true),
                   const Divider(color: AppTheme.border, height: 30),
-                  
                   _buildInfoRow("VÁLIDA ATÉ", _userVencimento, valueColor: _getCorVencimento(_userVencimento)),
                   const Divider(color: AppTheme.border, height: 30),
-                  
                   _buildInfoRow("E-MAIL VINCULADO", _userEmail),
                   const Divider(color: AppTheme.border, height: 30),
-                  
                   _buildInfoRow("ID PLANILHA CLIENTE", _userIdPlanilha, isMono: true, size: 10),
                   const Divider(color: AppTheme.border, height: 30),
-                  
                   _buildInfoRow("VINCULADO AO APARELHO", _deviceId, isMono: true, size: 10),
                 ],
               ),
             ),
             const SizedBox(height: 30),
             
-            // BOTÃO DE SAIR ESTILIZADO
             SizedBox(
               width: double.infinity,
               height: 55,
@@ -876,7 +877,7 @@ void _fazerLogoff() async {
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppTheme.red, width: 1.5),
                   foregroundColor: AppTheme.red,
-                  backgroundColor: AppTheme.red.withOpacity(0.05), // Fundo levemente vermelho
+                  backgroundColor: AppTheme.red.withOpacity(0.05),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                 ),
                 icon: _isSaindo 
@@ -895,7 +896,6 @@ void _fazerLogoff() async {
     );
   }
 
-  // 🚀 WIDGET AUXILIAR PARA ALINHAR AS INFORMAÇÕES
   Widget _buildInfoRow(String title, String value, {Color valueColor = AppTheme.muted, bool isMono = false, double size = 13}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -917,8 +917,9 @@ void _fazerLogoff() async {
 }
 
 // ==========================================
-// COMPONENTE: PAINEL DE FILTROS COM CHIPS (BOTTOM SHEET)
+// COMPONENTE: PAINEL DE FILTROS
 // ==========================================
+/// Modal para configuração de filtros de aeroportos e companhias.
 class FilterBottomSheet extends StatefulWidget {
   final UserFilters filtrosAtuais;
   final Function(UserFilters) onFiltrosSalvos;
@@ -937,7 +938,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
   @override
   void initState() {
     super.initState();
-    // Clona os filtros para edição
+    // Clona os filtros para edição sem afetar a tela principal imediatamente.
     _tempFiltros = UserFilters(
       latamAtivo: widget.filtrosAtuais.latamAtivo,
       smilesAtivo: widget.filtrosAtuais.smilesAtivo,
@@ -963,7 +964,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     return Container(
       padding: EdgeInsets.only(
         top: 20, left: 20, right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20, // Empurra pra cima se o teclado abrir
+        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
       ),
       decoration: const BoxDecoration(
         color: AppTheme.surface,
@@ -986,32 +987,31 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             ),
             const SizedBox(height: 24),
 
-            // 🚀 Toggle Switches (Companhias)
+            // Switches para as companhias.
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text("LATAM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-              activeColor: const Color(0xFFF43F5E), // Vermelho Latam
+              activeColor: const Color(0xFFF43F5E),
               value: _tempFiltros.latamAtivo,
               onChanged: (val) => setState(() => _tempFiltros.latamAtivo = val),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text("Smiles", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-              activeColor: const Color(0xFFF59E0B), // Laranja Smiles
+              activeColor: const Color(0xFFF59E0B),
               value: _tempFiltros.smilesAtivo,
               onChanged: (val) => setState(() => _tempFiltros.smilesAtivo = val),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text("AZUL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
-              activeColor: const Color(0xFF38BDF8), // Azul
+              activeColor: const Color(0xFF38BDF8),
               value: _tempFiltros.azulAtivo,
               onChanged: (val) => setState(() => _tempFiltros.azulAtivo = val),
             ),
             
             const Divider(color: AppTheme.border, height: 30),
 
-            // 🚀 CHIPS: ORIGEM E DESTINO
             if (_isLoadingAeros) 
               const Center(child: CircularProgressIndicator(color: AppTheme.accent))
             else ...[
@@ -1022,7 +1022,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             
             const SizedBox(height: 30),
 
-            // Botão Salvar
             SizedBox(
               width: double.infinity,
               height: 50,
@@ -1048,7 +1047,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     );
   }
 
-  // 🚀 O MOTOR DE AUTOCOMPLETAR COM CHIPS
+  /// Constrói um campo de Autocomplete que gera Chips (Tags).
   Widget _buildAutocompleteChips(String titulo, List<String> listaSelecionados) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1056,7 +1055,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
         Text(titulo.toUpperCase(), style: const TextStyle(color: AppTheme.muted, fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
         
-        // Área de exibição dos Chips Selecionados
+        // Exibição dos aeroportos selecionados como Chips.
         Wrap(
           spacing: 8.0,
           runSpacing: 8.0,
@@ -1065,8 +1064,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
               label: Text(item, style: const TextStyle(fontSize: 12, color: Colors.white)),
               backgroundColor: AppTheme.card,
               deleteIcon: const Icon(Icons.close, size: 16, color: AppTheme.red),
-              side: const BorderSide(color: AppTheme.border),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               onDeleted: () {
                 setState(() => listaSelecionados.remove(item));
               },
@@ -1076,13 +1073,12 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
         
         if (listaSelecionados.isNotEmpty) const SizedBox(height: 10),
 
-        // O Input de Busca
         Autocomplete<String>(
           optionsBuilder: (TextEditingValue textEditingValue) {
             if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
             return _todosAeroportos.where((aeroporto) => 
               aeroporto.toLowerCase().contains(textEditingValue.text.toLowerCase()) && 
-              !listaSelecionados.contains(aeroporto) // Esconde os que já foram selecionados
+              !listaSelecionados.contains(aeroporto)
             );
           },
           onSelected: (String selecao) {
@@ -1099,23 +1095,20 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 prefixIcon: const Icon(Icons.search, color: AppTheme.muted, size: 20),
                 filled: true,
                 fillColor: AppTheme.bg,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
                 enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.accent)),
               ),
               onSubmitted: (value) {
-                // Permite adicionar texto livre se o usuário apertar Enter e não clicar na sugestão
                 if (value.trim().isNotEmpty && !listaSelecionados.contains(value.toUpperCase())) {
                   setState(() {
                     listaSelecionados.add(value.toUpperCase());
                     textEditingController.clear();
-                    focusNode.requestFocus(); // Mantém o teclado aberto para add mais
+                    focusNode.requestFocus();
                   });
                 }
               },
             );
           },
-          // Estiliza a caixinha de sugestões que flutua
           optionsViewBuilder: (context, onSelected, options) {
             return Align(
               alignment: Alignment.topLeft,
@@ -1127,7 +1120,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, spreadRadius: 2)]
                   ),
                   child: ListView.builder(
                     padding: EdgeInsets.zero,

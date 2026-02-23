@@ -5,17 +5,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'discovery_service.dart';
 import '../models/alert.dart';
 
+/// Serviço responsável por monitorar e buscar novos alertas de milhas no servidor.
+///
+/// Este serviço utiliza o padrão "Polling", que consiste em perguntar ao servidor
+/// periodicamente se há novidades.
 class AlertService {
   static const String _keyLastSync = "LAST_ALERT_SYNC_V2";
   final DiscoveryService _discovery = DiscoveryService();
   
-  // Stream para enviar os dados para a Interface Visual
+  /// StreamController para gerenciar a transmissão de dados para a interface.
+  ///
+  /// Analogia: Funciona como um EventEmitter no Node.js, um Observable (RxJS) no JavaScript,
+  /// ou um IObservable no C#. Ele "transmite" os novos alertas para quem estiver "ouvindo".
   final _alertController = StreamController<List<Alert>>.broadcast();
+
+  /// Exposição da Stream para que a UI possa se inscrever e receber atualizações em tempo real.
   Stream<List<Alert>> get alertStream => _alertController.stream;
 
   Timer? _timer;
   bool _isPolling = false;
 
+  /// Inicia o "Motor de Tracção" (Polling).
   void startMonitoring() async {
     if (_isPolling) return;
     _isPolling = true;
@@ -23,16 +33,23 @@ class AlertService {
     _scheduleNextPoll(); 
   }
 
+  /// Para o monitoramento e limpa os recursos.
   void stopMonitoring() {
     _timer?.cancel();
     _isPolling = false;
     print("🛑 Motor de Polling Parado");
   }
 
+  /// Agenda a próxima verificação baseada no intervalo definido pelo servidor.
+  ///
+  /// Este método é assíncrono (`Future`), o que significa que ele não trava a interface
+  /// enquanto espera a resposta da rede.
+  ///
+  /// Analogia: `Future` é exatamente como uma `Promise` em JavaScript ou uma `Task` em C#.
   Future<void> _scheduleNextPoll() async {
     if (!_isPolling) return;
 
-    // 1. Descobre de quanto em quanto tempo deve rodar
+    // 1. Descobre de quanto em quanto tempo deve rodar (Configuração Dinâmica)
     final config = await _discovery.getConfig();
     if (config == null || !config.isActive) {
       print("⏸️ Sistema em manutenção ou sem rede. Tentando em 60s.");
@@ -45,18 +62,25 @@ class AlertService {
     // 2. Executa a checagem na API
     await _checkNewAlerts(config.gasUrl);
 
-    // 3. Agenda a próxima rodada (recursividade adaptativa)
+    // 3. Agenda a próxima rodada (Recursividade Controlada por Timer)
     print("⏳ Próxima checagem em $intervalo segundos.");
     _timer = Timer(Duration(seconds: intervalo), _scheduleNextPoll);
   }
 
+  /// Realiza a chamada HTTP para buscar novos alertas desde a última sincronização.
+  ///
+  /// Analogia: O uso do `http.get` é similar ao `fetch()` ou `axios.get()` no JavaScript,
+  /// ou à biblioteca `requests` no Python.
   Future<void> _checkNewAlerts(String gasUrl) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Recupera a data da última sincronização para não baixar alertas repetidos.
+    // Analogia: SharedPreferences funciona como o localStorage do navegador.
     String lastSync = prefs.getString(_keyLastSync) ?? 
         DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
 
     try {
-      // 🚀 1. CONSTRUÇÃO SEGURA DE URL (Garante o URL Encode de caracteres como ':')
+      // 🚀 CONSTRUÇÃO SEGURA DE URL: Garante que caracteres especiais sejam codificados.
       final uriBase = Uri.parse(gasUrl);
       final uriSegura = uriBase.replace(queryParameters: {
         'action': 'SYNC_ALERTS',
@@ -67,7 +91,7 @@ class AlertService {
 
       if (response.statusCode == 200) {
         
-        // 🚀 2. TRAVA DE SEGURANÇA: Só tenta ler se realmente for um JSON válido
+        // 🚀 TRAVA DE SEGURANÇA: Só tenta ler se realmente for um JSON válido.
         if (response.body.trim().startsWith('{')) {
           final body = jsonDecode(response.body);
           
@@ -75,18 +99,20 @@ class AlertService {
             List<dynamic> rawList = body['data'];
             
             if (rawList.isNotEmpty) {
+              // Transforma a lista de mapas brutos em uma lista de Objetos Alert (Tipagem Forte)
               List<Alert> novosAlertas = rawList.map((j) => Alert.fromJson(j)).toList();
               print("🔔 ${novosAlertas.length} Novos Alertas extraídos com sucesso!");
               
+              // Notifica a Stream (Avisa a tela que chegaram novidades)
               _alertController.add(novosAlertas);
               
+              // Atualiza o timestamp da última sincronização com a hora do servidor
               if (body['serverTime'] != null) {
                 await prefs.setString(_keyLastSync, body['serverTime']);
               }
             }
           }
         } else {
-          // Se cair aqui, a URL ou a implantação do GAS ainda estão erradas
           print("⚠️ Servidor não retornou JSON. Resposta: ${response.body}");
         }
       }
