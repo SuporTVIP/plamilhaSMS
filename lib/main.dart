@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // 🚀 NOVO
+import 'utils/web_window_manager.dart';
 
 // Instância global de Notificações
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -105,6 +106,13 @@ class _MainNavigatorState extends State<MainNavigator> {
     const LicenseScreen(),
     const SmsScreen(),
   ];
+
+@override
+  void initState() {
+    super.initState();
+    // 🚀 Chama a função que se adapta automaticamente (Faz nada no celular, desloga na Web)
+    registerWebCloseListener(); 
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -981,7 +989,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             // 🚀 Toggle Switches (Companhias)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text("LATAM Pass", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+              title: const Text("LATAM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
               activeColor: const Color(0xFFF43F5E), // Vermelho Latam
               value: _tempFiltros.latamAtivo,
               onChanged: (val) => setState(() => _tempFiltros.latamAtivo = val),
@@ -995,7 +1003,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text("Azul", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
+              title: const Text("AZUL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w500)),
               activeColor: const Color(0xFF38BDF8), // Azul
               value: _tempFiltros.azulAtivo,
               onChanged: (val) => setState(() => _tempFiltros.azulAtivo = val),

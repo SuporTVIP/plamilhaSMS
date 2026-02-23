@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'discovery_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 enum AuthStatus { autorizado, bloqueado, erroRede }
 
@@ -26,8 +27,12 @@ class AuthService {
   Future<String> getDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     String? id = prefs.getString(_keyDeviceId);
+    
     if (id == null) {
-      id = const Uuid().v4();
+      // 🚀 ASSINATURA DE PLATAFORMA: Se for Web começa com "WEB_", senão "APP_"
+      String prefixo = kIsWeb ? "WEB_" : "APP_";
+      id = "$prefixo${const Uuid().v4()}"; 
+      
       await prefs.setString(_keyDeviceId, id);
     }
     return id;
@@ -115,6 +120,24 @@ class AuthService {
       return {"sucesso": false, "mensagem": "Erro (${response.statusCode})"};
     } catch (e) {
       return {"sucesso": false, "mensagem": "Servidor offline."};
+    }
+  }
+
+  // 🚀 REMOVE DA PLANILHA SEM LIMPAR O CELULAR/NAVEGADOR
+  Future<void> logoutSilencioso() async {
+    String deviceId = await getDeviceId();
+    try {
+      String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
+      if (url != null) {
+        // Envia a requisição de remoção sem esperar resposta (fire and forget)
+        http.post(
+          Uri.parse(url),
+          body: jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId}),
+        );
+        print("🌐 Sessão Web encerrada na planilha.");
+      }
+    } catch (e) {
+      print("Erro no logout silencioso: $e");
     }
   }
 

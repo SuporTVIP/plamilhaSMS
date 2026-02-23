@@ -34,7 +34,7 @@ dependencies:
   # Novo Roadmap - UI e Funcionalidades
   webview_flutter: ^4.7.0    # Para mostrar o Dashboard/Painel Web
   audioplayers: ^6.0.0       # Para o alerta sonoro (Fase 4)
-  workmanager: ^0.5.2        # Para checar alertas em background (Fase 4)
+  workmanager: ^0.6.3      # Para checar alertas em background (Fase 4)
   
   # UI
   google_fonts: ^6.1.0       # Para usar a fonte 'IBM Plex Mono' do design
