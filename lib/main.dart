@@ -13,6 +13,9 @@ import 'utils/web_window_manager.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
 import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
+import 'dart:async';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -558,9 +561,8 @@ class _AlertCardState extends State<AlertCard> {
 }
 
 // ==========================================
-// TELA 3: SMS CONNECTOR
+// TELA 3: SMS CONNECTOR (OTIMIZADA)
 // ==========================================
-/// Painel de monitoramento de SMS (Funcionalidade Nativa).
 class SmsScreen extends StatefulWidget {
   const SmsScreen({super.key});
 
@@ -569,39 +571,103 @@ class SmsScreen extends StatefulWidget {
 }
 
 class _SmsScreenState extends State<SmsScreen> {
+  static const platform = MethodChannel('com.suportvips.milhasalert/sms_control');
   bool _isMonitoring = false;
-  
-  // Simulador de Console (Terminal de Logs)
-  final List<String> _logs = [
-    "[SISTEMA] Módulo de interceptação pronto.",
-    "[AVISO] Aguardando comando de inicialização...",
-  ];
+  List<Map<String, String>> _smsHistory = [];
+  Timer? _refreshTimer;
 
-static const platform = MethodChannel('com.suportvips.milhasalert/sms_control');
-
-void _toggleMonitoring() async {
-  try {
-    // 🚀 LIGA/DESLIGA O SERVIÇO NATIVO
-    final bool result = await platform.invokeMethod(_isMonitoring ? 'stopSmsService' : 'startSmsService');
-    
-    setState(() {
-      _isMonitoring = !_isMonitoring;
-      String hora = "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}";
-      
-      if (_isMonitoring) {
-        _logs.insert(0, "[$hora] 🟢 CAPTURA ATIVADA.");
-        _logs.insert(0, "[$hora] 📡 Blacklist Beta (18 termos) ativa.");
-      } else {
-        _logs.insert(0, "[$hora] 🔴 CAPTURA PAUSADA.");
-      }
-    });
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+  @override
+  void initState() {
+    super.initState();
+    _carregarEstadoBotao();
+    _loadHistory();
+    // 🚀 O "Radar" do Flutter: Olha a memória a cada 3 segundos pra ver se o Kotlin salvou algo novo
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadHistory());
   }
-}
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel(); // Limpa o timer quando sai da aba
+    super.dispose();
+  }
+
+  void _carregarEstadoBotao() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isMonitoring = prefs.getBool('IS_SMS_MONITORING') ?? false;
+    });
+  }
+
+  void _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final historyStr = prefs.getString('SMS_HISTORY') ?? '[]';
+    try {
+      final List<dynamic> decoded = jsonDecode(historyStr);
+      if (mounted) {
+        setState(() {
+          _smsHistory = decoded.map((e) => {
+            "remetente": e["remetente"].toString(),
+            "mensagem": e["mensagem"].toString(),
+            "hora": e["hora"].toString(),
+          }).toList().reversed.toList(); // Inverte para o mais novo ficar no topo
+        });
+      }
+    } catch(e) {}
+  }
+
+  void _toggleMonitoring() async {
+    try {
+      final bool result = await platform.invokeMethod(_isMonitoring ? 'stopSmsService' : 'startSmsService');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('IS_SMS_MONITORING', !_isMonitoring);
+      
+      setState(() {
+        _isMonitoring = !_isMonitoring;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 BLINDAGEM WEB: Se for navegador, mostra uma tela de aviso bonita e bloqueia o acesso nativo.
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sms, color: AppTheme.accent, size: 22),
+              SizedBox(width: 8),
+              Text("SMS", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
+              Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+            ],
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(30.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.phonelink_erase, size: 80, color: AppTheme.border),
+                const SizedBox(height: 20),
+                const Text("Função Exclusiva Mobile", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(height: 10),
+                const Text(
+                  "A interceptação de SMS ocorre localmente no aparelho para garantir a sua privacidade.\n\nInstale o aplicativo no seu celular Android para ativar o motor de captura.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.muted, fontSize: 13, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 👇 SE CHEGOU AQUI, É PORQUE ESTÁ NO CELULAR ANDROID (Mostra a tela normal) 👇
     return Scaffold(
       appBar: AppBar(
         title: const Row(
@@ -619,59 +685,10 @@ void _toggleMonitoring() async {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status Card com Animação
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
-              decoration: BoxDecoration(
-                color: AppTheme.card, 
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: !_isMonitoring ? AppTheme.red.withOpacity(0.3) : AppTheme.green.withOpacity(0.3)),
-                boxShadow: [
-                  BoxShadow(
-                    color: !_isMonitoring ? AppTheme.red.withOpacity(0.05) : AppTheme.green.withOpacity(0.05),
-                    blurRadius: 20, spreadRadius: 5
-                  )
-                ]
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    _isMonitoring ? Icons.satellite_alt : Icons.portable_wifi_off, 
-                    size: 60, 
-                    color: _isMonitoring ? AppTheme.green : AppTheme.muted
-                  ).animate(target: _isMonitoring ? 1 : 0).shimmer(duration: 2.seconds, color: Colors.white24),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 12, height: 12,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle, 
-                          color: !_isMonitoring ? AppTheme.red : AppTheme.green,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        _isMonitoring ? "MONITORANDO MENSAGENS" : "SISTEMA PAUSADO", 
-                        style: TextStyle(
-                          fontSize: 14, 
-                          fontWeight: FontWeight.w900, 
-                          letterSpacing: 1.5,
-                          color: !_isMonitoring ? AppTheme.red : AppTheme.green
-                        )
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
+            // Botão Otimizado (Menor e mais direto)
             SizedBox(
               width: double.infinity,
-              height: 60,
+              height: 55,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _isMonitoring ? AppTheme.card : AppTheme.accent,
@@ -679,57 +696,62 @@ void _toggleMonitoring() async {
                   side: _isMonitoring ? const BorderSide(color: AppTheme.red) : null,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: _isMonitoring ? 0 : 10,
-                  shadowColor: AppTheme.accent.withOpacity(0.5),
                 ),
                 icon: Icon(_isMonitoring ? Icons.stop_circle : Icons.play_circle_fill, size: 24),
                 label: Text(
-                  _isMonitoring ? "DESLIGAR CAPTURA" : "INICIAR CAPTURA NATIVA",
+                  _isMonitoring ? "DESLIGAR SMS" : "INICIAR REDIRECIONAMENTO SMS",
                   style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 14),
                 ),
                 onPressed: _toggleMonitoring,
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
-            // Estilo Terminal (Prompt de Comando)
             const Row(
               children: [
-                Icon(Icons.terminal, color: AppTheme.muted, size: 18),
+                Icon(Icons.history, color: AppTheme.muted, size: 18),
                 SizedBox(width: 8),
-                Text("CONSOLE DE ATIVIDADES", style: TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 11)),
+                Text("ÚLTIMOS SMS CAPTURADOS", style: TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 11)),
               ],
             ),
             const SizedBox(height: 10),
+
+            // Lista Real de SMS
             Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF030508),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: ListView.builder(
-                  itemCount: _logs.length,
+              child: _smsHistory.isEmpty 
+              ? const Center(
+                  child: Text("Nenhum SMS interceptado ainda.", style: TextStyle(color: AppTheme.muted, fontSize: 12))
+                )
+              : ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _smsHistory.length,
                   itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6.0),
-                      child: SelectableText(
-                        _logs[index],
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: _logs[index].contains("🔴") 
-                              ? AppTheme.red 
-                              : _logs[index].contains("🟢") || _logs[index].contains("📡")
-                                  ? AppTheme.green 
-                                  : AppTheme.muted,
-                        ),
+                    final sms = _smsHistory[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(sms["remetente"] ?? "", style: const TextStyle(color: AppTheme.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                              Text(sms["hora"] ?? "", style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(sms["mensagem"] ?? "", style: const TextStyle(color: AppTheme.text, fontSize: 11)),
+                        ],
                       ),
                     );
                   },
                 ),
-              ),
             ),
           ],
         ),
@@ -737,7 +759,6 @@ void _toggleMonitoring() async {
     );
   }
 }
-
 // ==========================================
 // TELA 2: LICENÇA (Dashboard)
 // ==========================================
