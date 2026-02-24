@@ -10,23 +10,53 @@ import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'utils/web_window_manager.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+// 🚀 O MOTOR INVISÍVEL (Roda com o app fechado)
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    print("🤖 [BACKGROUND] O celular acordou o aplicativo em segundo plano! Tarefa: $task");
+    
+    // Na próxima etapa, colocaremos a chamada da sua Planilha aqui dentro!
+    
+    return Future.value(true);
+  });
+}
 
 /// Ponto de entrada do aplicativo.
 ///
 /// Analogia: Equivale ao `main()` em C# ou Java, ou ao início do script global no JS.
 void main() async {
-  // Garante que os recursos nativos do Flutter estejam prontos.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES (Configuração específica para Android)
+  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  // 🚀 BLINDAGEM MULTIPLATAFORMA: Só liga o motor de fundo se NÃO for Web
+  if (!kIsWeb) {
+    Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: true, 
+    );
+
+    Workmanager().registerPeriodicTask(
+      "RADAR_VIP_TASK_01", 
+      "verificarAlertasFundo", 
+      frequency: const Duration(minutes: 15),
+      constraints: Constraints(
+        networkType: NetworkType.connected, 
+      ),
+    );
+  }
 
   runApp(const MilhasAlertApp());
 }
@@ -219,16 +249,20 @@ class _AlertsScreenState extends State<AlertsScreen> {
     });
   }
 
-  /// Gera uma notificação nativa no sistema operacional.
+  /// Gera uma notificação nativa no sistema operacional com SOM CUSTOMIZADO.
   Future<void> _mostrarNotificacao(Alert alerta) async {
     const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'emissao_vip',
+      'emissao_vip_v2', // 🚀 MUDAMOS O ID PARA V2 (Força o Android a recriar o canal com o som novo)
       'Emissões FãMilhas',
       channelDescription: 'Avisos de novas passagens',
       importance: Importance.max,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
+      // 🚀 A MÁGICA ACONTECE AQUI: Aponta para a pasta res/raw nativa do Android
+      sound: RawResourceAndroidNotificationSound('alerta'), 
+      playSound: true,
     );
+    
     const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
     
     await flutterLocalNotificationsPlugin.show(
@@ -440,24 +474,41 @@ class _AlertCardState extends State<AlertCard> {
                   children: [
                     const Divider(color: AppTheme.border, height: 20),
                     
+// Grid de Dados Extraídos (Metadados)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _buildInfoColumn("IDA", widget.alerta.dataIda),
                         _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
                         _buildInfoColumn("CUSTO (Milhas)", widget.alerta.valorFabricado),
-                        _buildInfoColumn("VENDA FÃ", widget.alerta.valorEmissao, isHighlight: true),
+                        // 🚀 TROCAMOS O NOME E A VARIÁVEL
+                        _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true), 
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    Container(
+                  Container(
+                      height: 90, // Altura fixa e compacta
+                      width: double.infinity,
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        widget.alerta.mensagem,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontStyle: FontStyle.italic),
-                        maxLines: 4, overflow: TextOverflow.ellipsis,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3), 
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white10), // Borda sutil
+                      ),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(), // Efeito de mola ao rolar
+                        // SelectableText permite que o cliente copie as datas!
+                        child: SelectableText(
+                          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A")
+                              ? widget.alerta.detalhes
+                              : widget.alerta.mensagem, // Fallback para a mensagem antiga
+                          style: const TextStyle(
+                            color: AppTheme.text, 
+                            fontSize: 11, 
+                            height: 1.4 // Espaçamento entre linhas pra facilitar a leitura
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
