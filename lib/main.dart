@@ -208,15 +208,50 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // 🚀 1. VARIÁVEL DO SOM
+  bool _isSoundEnabled = true; 
+
   @override
   void initState() {
     super.initState();
+    _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
   }
 
   void _carregarFiltros() async {
     _filtros = await UserFilters.load();
     _iniciarMotorDeTracao();
+  }
+
+  // 🚀 3. FUNÇÕES DE LIGAR/DESLIGAR E SALVAR NA MEMÓRIA
+  Future<void> _loadSoundPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isSoundEnabled = prefs.getBool('SOUND_ENABLED') ?? true;
+      });
+    }
+  }
+
+  Future<void> _toggleSound() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isSoundEnabled = !_isSoundEnabled;
+      prefs.setBool('SOUND_ENABLED', _isSoundEnabled);
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isSoundEnabled ? "🔊 Notificações sonoras ATIVADAS" : "🔇 Notificações sonoras MUTADAS",
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: _isSoundEnabled ? AppTheme.green : AppTheme.red,
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
+    }
   }
 
   /// Inicia a escuta da Stream de alertas.
@@ -235,10 +270,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
           _isCarregando = false;
         });
 
-        // 🚀 Feedback Sonoro e Visual (Notificação)
+       // 🚀 Feedback Sonoro e Visual (Notificação)
         if (novosQuePassaram.isNotEmpty) {
           try {
-            await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+            if (_isSoundEnabled) { // 🚀 SÓ TOCA SE ESTIVER LIGADO
+              await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+            }
             _mostrarNotificacao(novosQuePassaram.first);
           } catch (e) {
             print("Erro ao tocar som: $e");
@@ -255,7 +292,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   /// Gera uma notificação nativa no sistema operacional com SOM CUSTOMIZADO.
   Future<void> _mostrarNotificacao(Alert alerta) async {
-    const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
+    // Não é const porque dependemos de _isSoundEnabled em tempo de execução
+    final AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
       'emissao_vip_v2', // 🚀 MUDAMOS O ID PARA V2 (Força o Android a recriar o canal com o som novo)
       'Emissões FãMilhas',
       channelDescription: 'Avisos de novas passagens',
@@ -263,11 +301,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
       // 🚀 A MÁGICA ACONTECE AQUI: Aponta para a pasta res/raw nativa do Android
-      sound: RawResourceAndroidNotificationSound('alerta'), 
-      playSound: true,
+      sound: const RawResourceAndroidNotificationSound('alerta'), 
+      playSound: _isSoundEnabled, // 🚀 OBEDECE AO BOTÃO AQUI TAMBÉM
     );
     
-    const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+    final NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
     
     await flutterLocalNotificationsPlugin.show(
       alerta.id.hashCode,
@@ -313,7 +351,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
+        // 🚀 LOGO SUBSTITUINDO O TEXTO
+               title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.radar, color: AppTheme.accent, size: 22),
@@ -328,12 +367,24 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ),
           ],
         ),
+        centerTitle: true,
         actions: [
+          // 🚀 NOVO BOTÃO DE VOLUME
+          IconButton(
+            icon: Icon(
+              _isSoundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              color: _isSoundEnabled ? AppTheme.accent : AppTheme.muted,
+            ),
+            tooltip: "Ligar/Desligar Som",
+            onPressed: _toggleSound,
+          ),
+          // BOTÃO DE FILTROS ORIGINAL
           IconButton(
             icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent),
             tooltip: "Filtros",
             onPressed: _abrirPainelFiltros,
-          )
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _isCarregando
