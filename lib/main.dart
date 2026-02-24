@@ -131,6 +131,8 @@ class _MainNavigatorState extends State<MainNavigator> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // IndexedStack: Mantém todas as telas na "pilha" mas exibe apenas uma.
+      // Analogia: Abas no navegador que mantêm seu estado (como texto digitado) mesmo quando você troca de aba.
       body: IndexedStack(
         index: _currentIndex,
         children: _screens,
@@ -273,12 +275,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Scaffold: A estrutura básica de layout da página (como o <body> no HTML).
     return Scaffold(
       appBar: AppBar(
+        // Row: Organiza os elementos horizontalmente (Analogia: display: flex; flex-direction: row).
         title: const Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min, // Comporta-se como 'width: fit-content'
           children: [
             Icon(Icons.radar, color: AppTheme.accent, size: 22),
+            // SizedBox: Cria um espaço fixo entre os elementos (Analogia: margin-right).
             SizedBox(width: 8),
             Text(
               "FEED DE EMISSÕES",
@@ -312,9 +317,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
                     ],
                   ),
                 )
+              // ListView.builder: Cria uma lista rolável que carrega apenas o que está visível.
+              // Analogia: Similar às Virtual Lists no React ou ao carregamento sob demanda no Web.
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _listaAlertasFiltrados.length,
+                  // O itemBuilder é chamado apenas para os itens que aparecem na tela.
                   itemBuilder: (context, index) {
                     final alerta = _listaAlertasFiltrados[index];
                     return AlertCard(alerta: alerta);
@@ -370,23 +378,26 @@ class _AlertCardState extends State<AlertCard> {
 
     String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
 
+    // AnimatedContainer: Um Container que anima suas propriedades automaticamente (como transitions no CSS).
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 16), // Espaçamento externo
       decoration: BoxDecoration(
         color: corFundo,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(12), // Border-radius do CSS
         border: Border.all(color: _isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
         boxShadow: _isExpanded ? [BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1)] : [],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _isExpanded = !_isExpanded),
+        // Column: Organiza os elementos verticalmente (Analogia: display: flex; flex-direction: column).
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start, // Alinhamento horizontal (Analogia: align-items: flex-start).
           children: [
             // 🔹 CABEÇALHO (Sempre Visível)
+            // Padding: Adiciona preenchimento interno (Analogia: padding do CSS).
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -560,9 +571,11 @@ class _SmsScreenState extends State<SmsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Status Card com Animação
+            // Container: Um box genérico que pode ter cor, borda, sombra e padding (Analogia: <div>).
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+              // BoxDecoration: Define a aparência do Container (Bordas, Cores, Sombras).
               decoration: BoxDecoration(
                 color: AppTheme.card, 
                 borderRadius: BorderRadius.circular(16),
@@ -580,7 +593,9 @@ class _SmsScreenState extends State<SmsScreen> {
                     _isMonitoring ? Icons.satellite_alt : Icons.portable_wifi_off, 
                     size: 60, 
                     color: _isMonitoring ? AppTheme.green : AppTheme.muted
-                  ).animate(target: _isMonitoring ? 1 : 0).shimmer(duration: 2.seconds, color: Colors.white24),
+                  ).animate(target: _isMonitoring ? 1 : 0)
+                   // Shimmer: Um efeito de "brilho" comum em esqueletos de carregamento (Skeletons).
+                   .shimmer(duration: 2.seconds, color: Colors.white24),
                   const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -811,7 +826,9 @@ class _LicenseScreenState extends State<LicenseScreen> {
                       backgroundImage: NetworkImage(
                         'https://ui-avatars.com/api/?name=${Uri.encodeComponent(_userUsuario)}&background=0D1320&color=3B82F6&size=200&bold=true'
                       ),
-                    ).animate().scale(duration: 500.ms, curve: Curves.easeOutBack),
+                    ).animate()
+                     // Animação de entrada: Faz o avatar "crescer" suavemente.
+                     .scale(duration: 500.ms, curve: Curves.easeOutBack),
                   ),
                   const SizedBox(height: 20),
                   

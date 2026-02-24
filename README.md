@@ -40,6 +40,14 @@ Onde a "mágica" acontece:
 
 ---
 
+## 🎨 Layout e Estilização
+Para iniciantes, entender como os elementos se organizam é crucial:
+- **Flexbox (Row/Column)**: O Flutter usa intensamente o conceito de Flexbox. `Row` e `Column` são os blocos básicos de construção.
+- **Espaçamento**: Use `Padding` para preenchimento interno e `SizedBox` para espaços vazios entre componentes.
+- **Decoração**: O widget `Container` com a propriedade `decoration: BoxDecoration` permite criar bordas, arredondar cantos e adicionar sombras (como o CSS `border`, `border-radius` e `box-shadow`).
+
+---
+
 ## 📡 Fluxo de Dados
 
 1. O app inicia e o `DiscoveryService` localiza o servidor.

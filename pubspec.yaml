@@ -26,23 +26,23 @@ dependencies:
     sdk: flutter
   
   # Rede e Conexão (Legado reaproveitado)
-  http: ^1.2.0
-  dio: ^5.4.0
-  uuid: ^4.3.3
-  shared_preferences: ^2.2.0
+  http: ^1.2.0              # Para fazer requisições HTTP (Analogia: axios no JS)
+  dio: ^5.4.0               # Cliente HTTP potente para downloads e interceptores
+  uuid: ^4.3.3              # Gera IDs únicos (Analogia: uuid v4 no Node.js)
+  shared_preferences: ^2.2.0 # Armazenamento simples chave-valor (Analogia: localStorage)
   
   # Novo Roadmap - UI e Funcionalidades
-  webview_flutter: ^4.7.0    # Para mostrar o Dashboard/Painel Web
-  audioplayers: ^6.0.0       # Para o alerta sonoro (Fase 4)
-  workmanager: ^0.6.3      # Para checar alertas em background (Fase 4)
+  webview_flutter: ^4.7.0    # Permite exibir sites dentro do app (Analogia: <iframe>)
+  audioplayers: ^6.0.0       # Para tocar sons de alerta (Fase 4)
+  workmanager: ^0.6.3        # Executa tarefas em segundo plano (Analogia: Cron jobs ou Service Workers)
   
   # UI
-  google_fonts: ^6.1.0       # Para usar a fonte 'IBM Plex Mono' do design
-  flutter_animate: ^4.5.0    # Para animações fluidas nas telas de alerta
+  google_fonts: ^6.1.0       # Facilita o uso de fontes customizadas do Google Fonts
+  flutter_animate: ^4.5.0    # Biblioteca poderosa para animações encadeadas
 
-  url_launcher: ^6.3.0   # Para abrir links externos, como o painel web ou redes sociais
+  url_launcher: ^6.3.0       # Abre links no navegador externo ou outros apps
 
-  flutter_local_notifications: ^17.0.1 # Para notificações locais (Fase 4)
+  flutter_local_notifications: ^17.0.1 # Exibe notificações nativas no Android/iOS
 
 dev_dependencies:
   flutter_test:

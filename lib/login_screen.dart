@@ -101,6 +101,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: Center(
+        // SingleChildScrollView: Permite que o conteúdo role se for maior que a tela.
+        // Analogia: Essencial em formulários para que o teclado, ao subir, não cubra os campos de texto (evita o erro de 'bottom overflow').
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
@@ -159,9 +161,11 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 30),
 
               // Campo de E-mail
+              // TextField: O campo de entrada de texto (Analogia: <input type="text"> no HTML).
               TextField(
                 controller: _emailController,
                 style: const TextStyle(color: Colors.white, fontSize: 14),
+                // InputDecoration: Define a aparência do campo (Rótulo, ícone, bordas).
                 decoration: InputDecoration(
                   labelText: "E-mail de Destino",
                   labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
