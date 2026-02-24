@@ -5,75 +5,49 @@ import 'package:uuid/uuid.dart';
 import 'discovery_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-/// Define os possíveis estados de autorização do usuário.
 enum AuthStatus { autorizado, bloqueado, erroRede }
 
-/// Serviço responsável pelo gerenciamento de identidade, login e licenciamento.
-///
-/// Este serviço lida com a persistência de dados sensíveis e a comunicação
-/// de segurança com o servidor/planilha.
 class AuthService {
-  // Chaves para o SharedPreferences (Analogia: Nomes das chaves no localStorage do JS)
   static const String _keyDeviceId = "DEVICE_ID_V2";
   static const String _keyLastCheck = "LAST_LICENSE_CHECK_DATE";
-  
-  // Chaves da sessão ativa
   static const String _keyToken = "USER_TOKEN";
   static const String _keyEmail = "USER_EMAIL";
   static const String _keyUsuario = "USER_NAME";
   static const String _keyVencimento = "USER_VENCIMENTO";
   static const String _keyIdPlanilha = "USER_ID_PLANILHA";
-  
-  // Chaves de "Histórico" (Para preencher os campos automaticamente no próximo login)
   static const String _keyLastEmail = "LAST_LOGGED_EMAIL";
   static const String _keyLastToken = "LAST_LOGGED_TOKEN";
   
   final DiscoveryService _discovery = DiscoveryService();
 
-  /// Recupera ou gera um Identificador Único para o aparelho.
-  ///
-  /// Analogia: Funciona como um "Fingerprint" do navegador ou um ID de hardware em C#.
   Future<String> getDeviceId() async {
     final prefs = await SharedPreferences.getInstance();
     String? id = prefs.getString(_keyDeviceId);
-    
     if (id == null) {
-      // 🚀 ASSINATURA DE PLATAFORMA: Identifica se o acesso vem da Web ou do App nativo.
       String prefixo = kIsWeb ? "WEB_" : "APP_";
       id = "$prefixo${const Uuid().v4()}"; 
-      
       await prefs.setString(_keyDeviceId, id);
     }
     return id;
   }
 
-  /// Verifica se é a primeira vez que o usuário abre o app (ou se está deslogado).
   Future<bool> isFirstUse() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keyToken) == null;
   }
 
-  /// Salva as informações do usuário no armazenamento local.
-  ///
-  /// Analogia: Similar a gravar um dicionário Python em um arquivo `.json`
-  /// ou usar o `localStorage.setItem()` no JavaScript.
   Future<void> salvarLoginLocal(String email, String token, String usuario, String vencimento, String idPlanilha) async {
     final prefs = await SharedPreferences.getInstance();
-    // Salva sessão ativa
     await prefs.setString(_keyEmail, email);
     await prefs.setString(_keyToken, token);
     await prefs.setString(_keyUsuario, usuario);
     await prefs.setString(_keyVencimento, vencimento);
     await prefs.setString(_keyIdPlanilha, idPlanilha);
-    
-    // Salva no histórico para facilitar o próximo login do usuário
     await prefs.setString(_keyLastEmail, email);
     await prefs.setString(_keyLastToken, token);
-    
     await prefs.remove(_keyLastCheck); 
   }
 
-  /// Recupera os dados do usuário logado.
   Future<Map<String, String>> getDadosUsuario() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -85,7 +59,6 @@ class AuthService {
     };
   }
 
-  /// Recupera o histórico de e-mail e token para a tela de login.
   Future<Map<String, String>> getLastLoginData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -94,7 +67,6 @@ class AuthService {
     };
   }
 
-  /// Valida se o acesso ainda está autorizado para o dia de hoje.
   Future<AuthStatus> validarAcessoDiario() async {
     final prefs = await SharedPreferences.getInstance();
     String hoje = DateTime.now().toIso8601String().split('T')[0]; 
@@ -105,83 +77,106 @@ class AuthService {
     return AuthStatus.autorizado;
   }
 
-  /// Tenta autenticar o usuário enviando o e-mail, token e ID do dispositivo para o servidor.
-  ///
-  /// Analogia: Realiza um `POST` para a API, similar ao que fazemos com `axios.post()` no JS
-  /// ou `requests.post()` no Python.
-  Future<Map<String, dynamic>> autenticarNoServidor(String email, String token) async {
+Future<Map<String, dynamic>> autenticarNoServidor(String email, String token) async {
     String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
     if (url == null) return {"sucesso": false, "mensagem": "Falha de rede."};
 
     String deviceId = await getDeviceId();
+    String bodyData = jsonEncode({"action": "CHECK_DEVICE", "deviceId": deviceId, "token": token, "email": email});
 
     try {
-      final response = await http.post(
-        Uri.parse(url),
-        body: jsonEncode({"action": "CHECK_DEVICE", "deviceId": deviceId, "token": token, "email": email}),
-      ).timeout(const Duration(seconds: 15));
+      http.Response response;
+
+      if (kIsWeb) {
+        // 🚀 NO NAVEGADOR: O Chrome lida com o 302 sozinho (CORS nativo)
+        response = await http.post(Uri.parse(url), body: bodyData).timeout(const Duration(seconds: 15));
+      } else {
+        // 🚀 NO CELULAR: O Android precisa pegar na mão e seguir o 302
+        final request = http.Request('POST', Uri.parse(url))
+          ..followRedirects = false 
+          ..body = bodyData;
+
+        final streamedResponse = await request.send().timeout(const Duration(seconds: 15));
+        response = await http.Response.fromStream(streamedResponse);
+
+        if (response.statusCode == 302 || response.statusCode == 303) {
+          final redirectUrl = response.headers['location'];
+          if (redirectUrl != null) {
+            response = await http.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 15));
+          }
+        }
+      }
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['status'] == 'success') {
-          // Atualiza os dados locais com a resposta de sucesso do servidor
-          await salvarLoginLocal(
-            email, 
-            token, 
-            data['usuario'] ?? 'Desconhecido', 
-            data['vencimento'] ?? 'N/A', 
-            data['idPlanilha'] ?? 'N/A'
-          );
-          return {"sucesso": true, "mensagem": data['message']};
+        // Trava para garantir que não vamos tentar ler o texto de "Sistema Operante" como JSON
+        if (response.body.trim().startsWith('{')) {
+          final data = jsonDecode(response.body);
+          if (data['status'] == 'success') {
+            await salvarLoginLocal(
+              email, 
+              token, 
+              data['usuario'] ?? 'Desconhecido', 
+              data['vencimento'] ?? 'N/A', 
+              data['idPlanilha'] ?? 'N/A'
+            );
+            return {"sucesso": true, "mensagem": data['message']};
+          } else {
+            return {"sucesso": false, "mensagem": data['message']};
+          }
         } else {
-          return {"sucesso": false, "mensagem": data['message']};
+          print("⚠️ Resposta inesperada do servidor: ${response.body}");
+          return {"sucesso": false, "mensagem": "Erro de comunicação com o servidor."};
         }
       }
       return {"sucesso": false, "mensagem": "Erro (${response.statusCode})"};
     } catch (e) {
-      return {"sucesso": false, "mensagem": "Servidor offline."};
+      print("Erro Auth: $e");
+      return {"sucesso": false, "mensagem": "Servidor offline ou bloqueio de rede."};
     }
   }
 
-  /// Encerra a sessão no servidor sem limpar os dados locais do usuário.
-  /// Utilizado principalmente na Web ao fechar a aba.
   Future<void> logoutSilencioso() async {
     String deviceId = await getDeviceId();
     try {
       String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
       if (url != null) {
-        // Envia a requisição de remoção sem esperar resposta (fire and forget)
-        http.post(
-          Uri.parse(url),
-          body: jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId}),
-        );
-        print("🌐 Sessão Web encerrada na planilha.");
+        String bodyData = jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId});
+        
+        if (kIsWeb) {
+          http.post(Uri.parse(url), body: bodyData); // Fire and forget no navegador
+        } else {
+          final request = http.Request('POST', Uri.parse(url))
+            ..followRedirects = false
+            ..body = bodyData;
+          request.send(); // Fire and forget no nativo
+        }
+        print("🌐 Sessão encerrada na planilha.");
       }
-    } catch (e) {
-      print("Erro no logout silencioso: $e");
-    }
+    } catch (e) {}
   }
 
-  /// Realiza o logout completo, avisando o servidor e limpando a sessão local.
   Future<bool> logout() async {
     final prefs = await SharedPreferences.getInstance();
     String deviceId = await getDeviceId();
 
-    // 1. Tenta avisar a planilha para liberar o "Slot" de conexão deste aparelho
     try {
       String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
       if (url != null) {
-        await http.post(
-          Uri.parse(url),
-          body: jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId}),
-        ).timeout(const Duration(seconds: 10));
-        print("🗑️ Aparelho removido da planilha com sucesso.");
+        String bodyData = jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId});
+        
+        if (kIsWeb) {
+          await http.post(Uri.parse(url), body: bodyData).timeout(const Duration(seconds: 10));
+        } else {
+          final request = http.Request('POST', Uri.parse(url))
+            ..followRedirects = false
+            ..body = bodyData;
+          await request.send().timeout(const Duration(seconds: 10));
+        }
       }
     } catch (e) {
-      print("⚠️ Erro ao remover aparelho da planilha. Deslogando localmente...");
+      print("⚠️ Erro ao remover aparelho. Deslogando localmente...");
     }
 
-    // 2. Limpa os dados da sessão localmente (Analogia: `localStorage.clear()`)
     await prefs.remove(_keyToken);
     await prefs.remove(_keyEmail);
     await prefs.remove(_keyUsuario);

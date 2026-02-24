@@ -10,23 +10,57 @@ import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'utils/web_window_manager.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
+import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
+import 'dart:async';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+// 🚀 O MOTOR INVISÍVEL (Roda com o app fechado)
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    print("🤖 [BACKGROUND] O celular acordou o aplicativo em segundo plano! Tarefa: $task");
+    
+    // Na próxima etapa, colocaremos a chamada da sua Planilha aqui dentro!
+    
+    return Future.value(true);
+  });
+}
 
 /// Ponto de entrada do aplicativo.
 ///
 /// Analogia: Equivale ao `main()` em C# ou Java, ou ao início do script global no JS.
 void main() async {
-  // Garante que os recursos nativos do Flutter estejam prontos.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES (Configuração específica para Android)
+  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+  // 🚀 BLINDAGEM MULTIPLATAFORMA: Só liga o motor de fundo se NÃO for Web
+  if (!kIsWeb) {
+    Workmanager().initialize(
+      callbackDispatcher,
+      isInDebugMode: true, 
+    );
+
+    Workmanager().registerPeriodicTask(
+      "RADAR_VIP_TASK_01", 
+      "verificarAlertasFundo", 
+      frequency: const Duration(minutes: 15),
+      constraints: Constraints(
+        networkType: NetworkType.connected, 
+      ),
+    );
+  }
 
   runApp(const MilhasAlertApp());
 }
@@ -176,15 +210,50 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // 🚀 1. VARIÁVEL DO SOM
+  bool _isSoundEnabled = true; 
+
   @override
   void initState() {
     super.initState();
+    _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
   }
 
   void _carregarFiltros() async {
     _filtros = await UserFilters.load();
     _iniciarMotorDeTracao();
+  }
+
+  // 🚀 3. FUNÇÕES DE LIGAR/DESLIGAR E SALVAR NA MEMÓRIA
+  Future<void> _loadSoundPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isSoundEnabled = prefs.getBool('SOUND_ENABLED') ?? true;
+      });
+    }
+  }
+
+  Future<void> _toggleSound() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _isSoundEnabled = !_isSoundEnabled;
+      prefs.setBool('SOUND_ENABLED', _isSoundEnabled);
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isSoundEnabled ? "🔊 Notificações sonoras ATIVADAS" : "🔇 Notificações sonoras MUTADAS",
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: _isSoundEnabled ? AppTheme.green : AppTheme.red,
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
+    }
   }
 
   /// Inicia a escuta da Stream de alertas.
@@ -203,10 +272,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
           _isCarregando = false;
         });
 
-        // 🚀 Feedback Sonoro e Visual (Notificação)
+       // 🚀 Feedback Sonoro e Visual (Notificação)
         if (novosQuePassaram.isNotEmpty) {
           try {
-            await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+            if (_isSoundEnabled) { // 🚀 SÓ TOCA SE ESTIVER LIGADO
+              await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+            }
             _mostrarNotificacao(novosQuePassaram.first);
           } catch (e) {
             print("Erro ao tocar som: $e");
@@ -221,17 +292,22 @@ class _AlertsScreenState extends State<AlertsScreen> {
     });
   }
 
-  /// Gera uma notificação nativa no sistema operacional.
+  /// Gera uma notificação nativa no sistema operacional com SOM CUSTOMIZADO.
   Future<void> _mostrarNotificacao(Alert alerta) async {
-    const AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'emissao_vip',
+    // Não é const porque dependemos de _isSoundEnabled em tempo de execução
+    final AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
+      'emissao_vip_v2', // 🚀 MUDAMOS O ID PARA V2 (Força o Android a recriar o canal com o som novo)
       'Emissões FãMilhas',
       channelDescription: 'Avisos de novas passagens',
       importance: Importance.max,
       priority: Priority.high,
       icon: '@mipmap/ic_launcher',
+      // 🚀 A MÁGICA ACONTECE AQUI: Aponta para a pasta res/raw nativa do Android
+      sound: const RawResourceAndroidNotificationSound('alerta'), 
+      playSound: _isSoundEnabled, // 🚀 OBEDECE AO BOTÃO AQUI TAMBÉM
     );
-    const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+    
+    final NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
     
     await flutterLocalNotificationsPlugin.show(
       alerta.id.hashCode,
@@ -295,12 +371,24 @@ class _AlertsScreenState extends State<AlertsScreen> {
             ),
           ],
         ),
+        centerTitle: true,
         actions: [
+          // 🚀 NOVO BOTÃO DE VOLUME
+          IconButton(
+            icon: Icon(
+              _isSoundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              color: _isSoundEnabled ? AppTheme.accent : AppTheme.muted,
+            ),
+            tooltip: "Ligar/Desligar Som",
+            onPressed: _toggleSound,
+          ),
+          // BOTÃO DE FILTROS ORIGINAL
           IconButton(
             icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent),
             tooltip: "Filtros",
             onPressed: _abrirPainelFiltros,
-          )
+          ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _isCarregando
@@ -451,24 +539,41 @@ class _AlertCardState extends State<AlertCard> {
                   children: [
                     const Divider(color: AppTheme.border, height: 20),
                     
+// Grid de Dados Extraídos (Metadados)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _buildInfoColumn("IDA", widget.alerta.dataIda),
                         _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
                         _buildInfoColumn("CUSTO (Milhas)", widget.alerta.valorFabricado),
-                        _buildInfoColumn("VENDA FÃ", widget.alerta.valorEmissao, isHighlight: true),
+                        // 🚀 TROCAMOS O NOME E A VARIÁVEL
+                        _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true), 
                       ],
                     ),
                     const SizedBox(height: 16),
 
-                    Container(
+                  Container(
+                      height: 90, // Altura fixa e compacta
+                      width: double.infinity,
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        widget.alerta.mensagem,
-                        style: const TextStyle(color: AppTheme.muted, fontSize: 11, fontStyle: FontStyle.italic),
-                        maxLines: 4, overflow: TextOverflow.ellipsis,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.3), 
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white10), // Borda sutil
+                      ),
+                      child: SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(), // Efeito de mola ao rolar
+                        // SelectableText permite que o cliente copie as datas!
+                        child: SelectableText(
+                          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A")
+                              ? widget.alerta.detalhes
+                              : widget.alerta.mensagem, // Fallback para a mensagem antiga
+                          style: const TextStyle(
+                            color: AppTheme.text, 
+                            fontSize: 11, 
+                            height: 1.4 // Espaçamento entre linhas pra facilitar a leitura
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -517,9 +622,8 @@ class _AlertCardState extends State<AlertCard> {
 }
 
 // ==========================================
-// TELA 3: SMS CONNECTOR
+// TELA 3: SMS CONNECTOR (OTIMIZADA)
 // ==========================================
-/// Painel de monitoramento de SMS (Funcionalidade Nativa).
 class SmsScreen extends StatefulWidget {
   const SmsScreen({super.key});
 
@@ -528,31 +632,103 @@ class SmsScreen extends StatefulWidget {
 }
 
 class _SmsScreenState extends State<SmsScreen> {
+  static const platform = MethodChannel('com.suportvips.milhasalert/sms_control');
   bool _isMonitoring = false;
-  
-  // Simulador de Console (Terminal de Logs)
-  final List<String> _logs = [
-    "[SISTEMA] Módulo de interceptação pronto.",
-    "[AVISO] Aguardando comando de inicialização...",
-  ];
+  List<Map<String, String>> _smsHistory = [];
+  Timer? _refreshTimer;
 
-  /// Alterna o estado do monitoramento.
-  void _toggleMonitoring() {
+  @override
+  void initState() {
+    super.initState();
+    _carregarEstadoBotao();
+    _loadHistory();
+    // 🚀 O "Radar" do Flutter: Olha a memória a cada 3 segundos pra ver se o Kotlin salvou algo novo
+    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadHistory());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel(); // Limpa o timer quando sai da aba
+    super.dispose();
+  }
+
+  void _carregarEstadoBotao() async {
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _isMonitoring = !_isMonitoring;
-      String hora = "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
-      
-      if (_isMonitoring) {
-        _logs.insert(0, "[$hora] 🟢 Monitoramento NATIVO ATIVADO.");
-        _logs.insert(0, "[$hora] 📡 Escutando porta SMS de entrada...");
-      } else {
-        _logs.insert(0, "[$hora] 🔴 Monitoramento PAUSADO pelo usuário.");
-      }
+      _isMonitoring = prefs.getBool('IS_SMS_MONITORING') ?? false;
     });
+  }
+
+  void _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final historyStr = prefs.getString('SMS_HISTORY') ?? '[]';
+    try {
+      final List<dynamic> decoded = jsonDecode(historyStr);
+      if (mounted) {
+        setState(() {
+          _smsHistory = decoded.map((e) => {
+            "remetente": e["remetente"].toString(),
+            "mensagem": e["mensagem"].toString(),
+            "hora": e["hora"].toString(),
+          }).toList().reversed.toList(); // Inverte para o mais novo ficar no topo
+        });
+      }
+    } catch(e) {}
+  }
+
+  void _toggleMonitoring() async {
+    try {
+      final bool result = await platform.invokeMethod(_isMonitoring ? 'stopSmsService' : 'startSmsService');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('IS_SMS_MONITORING', !_isMonitoring);
+      
+      setState(() {
+        _isMonitoring = !_isMonitoring;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // 🚀 BLINDAGEM WEB: Se for navegador, mostra uma tela de aviso bonita e bloqueia o acesso nativo.
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sms, color: AppTheme.accent, size: 22),
+              SizedBox(width: 8),
+              Text("SMS", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
+              Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+            ],
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(30.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.phonelink_erase, size: 80, color: AppTheme.border),
+                const SizedBox(height: 20),
+                const Text("Função Exclusiva Mobile", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                const SizedBox(height: 10),
+                const Text(
+                  "A interceptação de SMS ocorre localmente no aparelho para garantir a sua privacidade.\n\nInstale o aplicativo no seu celular Android para ativar o motor de captura.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppTheme.muted, fontSize: 13, height: 1.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 👇 SE CHEGOU AQUI, É PORQUE ESTÁ NO CELULAR ANDROID (Mostra a tela normal) 👇
     return Scaffold(
       appBar: AppBar(
         title: const Row(
@@ -626,7 +802,7 @@ class _SmsScreenState extends State<SmsScreen> {
 
             SizedBox(
               width: double.infinity,
-              height: 60,
+              height: 55,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _isMonitoring ? AppTheme.card : AppTheme.accent,
@@ -634,57 +810,62 @@ class _SmsScreenState extends State<SmsScreen> {
                   side: _isMonitoring ? const BorderSide(color: AppTheme.red) : null,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: _isMonitoring ? 0 : 10,
-                  shadowColor: AppTheme.accent.withOpacity(0.5),
                 ),
                 icon: Icon(_isMonitoring ? Icons.stop_circle : Icons.play_circle_fill, size: 24),
                 label: Text(
-                  _isMonitoring ? "DESLIGAR CAPTURA" : "INICIAR CAPTURA NATIVA",
+                  _isMonitoring ? "DESLIGAR SMS" : "INICIAR REDIRECIONAMENTO SMS",
                   style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 14),
                 ),
                 onPressed: _toggleMonitoring,
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
 
-            // Estilo Terminal (Prompt de Comando)
             const Row(
               children: [
-                Icon(Icons.terminal, color: AppTheme.muted, size: 18),
+                Icon(Icons.history, color: AppTheme.muted, size: 18),
                 SizedBox(width: 8),
-                Text("CONSOLE DE ATIVIDADES", style: TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 11)),
+                Text("ÚLTIMOS SMS CAPTURADOS", style: TextStyle(color: AppTheme.muted, fontWeight: FontWeight.bold, letterSpacing: 1.5, fontSize: 11)),
               ],
             ),
             const SizedBox(height: 10),
+
+            // Lista Real de SMS
             Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF030508),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: ListView.builder(
-                  itemCount: _logs.length,
+              child: _smsHistory.isEmpty 
+              ? const Center(
+                  child: Text("Nenhum SMS interceptado ainda.", style: TextStyle(color: AppTheme.muted, fontSize: 12))
+                )
+              : ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _smsHistory.length,
                   itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6.0),
-                      child: SelectableText(
-                        _logs[index],
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: _logs[index].contains("🔴") 
-                              ? AppTheme.red 
-                              : _logs[index].contains("🟢") || _logs[index].contains("📡")
-                                  ? AppTheme.green 
-                                  : AppTheme.muted,
-                        ),
+                    final sms = _smsHistory[index];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(sms["remetente"] ?? "", style: const TextStyle(color: AppTheme.green, fontWeight: FontWeight.bold, fontSize: 12)),
+                              Text(sms["hora"] ?? "", style: const TextStyle(color: AppTheme.muted, fontSize: 10)),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(sms["mensagem"] ?? "", style: const TextStyle(color: AppTheme.text, fontSize: 11)),
+                        ],
                       ),
                     );
                   },
                 ),
-              ),
             ),
           ],
         ),
@@ -692,7 +873,6 @@ class _SmsScreenState extends State<SmsScreen> {
     );
   }
 }
-
 // ==========================================
 // TELA 2: LICENÇA (Dashboard)
 // ==========================================

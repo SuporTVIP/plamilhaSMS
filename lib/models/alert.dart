@@ -18,6 +18,8 @@ class Alert {
   final String milhas;
   final String valorFabricado;
   final String valorEmissao;
+  final String valorBalcao; 
+  final String detalhes; 
 
   /// Construtor padrão da classe Alert.
   Alert({
@@ -32,6 +34,8 @@ class Alert {
     this.milhas = "N/A",
     this.valorFabricado = "N/A",
     this.valorEmissao = "N/A",
+    this.valorBalcao = "N/A",
+    this.detalhes = "N/A",
   });
 
   /// Constrói uma instância de Alert a partir de um Map (JSON).
@@ -53,11 +57,11 @@ class Alert {
       print("Erro ao parsear metadados: $e");
     }
 
-    return Alert(
+return Alert(
       id: json['id'].toString(),
       mensagem: json['mensagem'] ?? '',
       programa: json['programa'] ?? 'Desconhecido',
-      data: DateTime.parse(json['data']), // Transforma String de data em objeto DateTime (como o datetime.fromisoformat no Python)
+      data: DateTime.parse(json['data']),
       link: json['link'],
       trecho: meta['trecho'] ?? 'N/A',
       dataIda: meta['data_ida'] ?? 'N/A',
@@ -65,6 +69,8 @@ class Alert {
       milhas: meta['milhas'] ?? 'N/A',
       valorFabricado: meta['valor_fabricado'] ?? 'N/A',
       valorEmissao: meta['valor_emissao'] ?? 'N/A',
+      valorBalcao: meta['valor_balcao'] ?? 'N/A',
+      detalhes: meta['detalhes'] ?? '', // 🚀 PUXA DO JSON AQUI
     );
   }
 }
