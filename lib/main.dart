@@ -12,6 +12,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'utils/web_window_manager.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
+import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -576,20 +577,28 @@ class _SmsScreenState extends State<SmsScreen> {
     "[AVISO] Aguardando comando de inicialização...",
   ];
 
-  /// Alterna o estado do monitoramento.
-  void _toggleMonitoring() {
+static const platform = MethodChannel('com.suportvips.milhasalert/sms_control');
+
+void _toggleMonitoring() async {
+  try {
+    // 🚀 LIGA/DESLIGA O SERVIÇO NATIVO
+    final bool result = await platform.invokeMethod(_isMonitoring ? 'stopSmsService' : 'startSmsService');
+    
     setState(() {
       _isMonitoring = !_isMonitoring;
-      String hora = "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}:${DateTime.now().second.toString().padLeft(2, '0')}";
+      String hora = "${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}";
       
       if (_isMonitoring) {
-        _logs.insert(0, "[$hora] 🟢 Monitoramento NATIVO ATIVADO.");
-        _logs.insert(0, "[$hora] 📡 Escutando porta SMS de entrada...");
+        _logs.insert(0, "[$hora] 🟢 CAPTURA ATIVADA.");
+        _logs.insert(0, "[$hora] 📡 Blacklist Beta (18 termos) ativa.");
       } else {
-        _logs.insert(0, "[$hora] 🔴 Monitoramento PAUSADO pelo usuário.");
+        _logs.insert(0, "[$hora] 🔴 CAPTURA PAUSADA.");
       }
     });
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
   }
+}
 
   @override
   Widget build(BuildContext context) {
