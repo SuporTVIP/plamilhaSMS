@@ -193,6 +193,7 @@ class MainNavigator extends StatefulWidget {
 
 class _MainNavigatorState extends State<MainNavigator> {
   int _currentIndex = 1; // Começa na aba central (Licença)
+  final AlertService alertService = AlertService();
 
   final List<Widget> _screens = [
     const AlertsScreen(),
@@ -205,17 +206,19 @@ class _MainNavigatorState extends State<MainNavigator> {
     super.initState();
     // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
+    alertService.startMonitoring();
+    // ❌ APAGUEI A LINHA '_setupFirebase();' QUE ESTAVA AQUI!
 
-    // Listener para notificações firebase quando o app estiver em primeiro plano
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print("🚀 PUSH RECEBIDO COM O APP ABERTO!");
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+  if (message.data['action'] == 'SYNC_ALERTS') {
+    
+    // 🚀 O PUSH ACABOU DE CHEGAR!
+    // Chamamos o serviço de alertas para buscar as novidades agora mesmo
+    // sem esperar o cronômetro do polling.
+    alertService.forceSync(); 
 
-      if (message.data['action'] == 'SYNC_ALERTS') {
-       print("🚨 Nova passagem detectada via Push! Sincronizando agora...");
-        // chamar sua função de download/atualização aqui
-         baixarDadosGist();
-      }
-    });
+  }
+});
   }
 
   @override

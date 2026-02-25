@@ -25,6 +25,21 @@ class AlertService {
   Timer? _timer;
   bool _isPolling = false;
 
+  /// 🚀 MÉTODO PARA FORÇAR SINCRONIZAÇÃO (VIA PUSH)
+/// Este método permite que o Push "acorde" o serviço e peça uma busca imediata.
+Future<void> forceSync() async {
+  print("🔔 Sincronização forçada via Push iniciada...");
+  
+  // 1. Pega a URL do servidor (GAS) que está no Discovery
+  final config = await _discovery.getConfig();
+  if (config != null && config.gasUrl.isNotEmpty) {
+    // 2. Chama a função que você encontrou!
+    await _checkNewAlerts(config.gasUrl);
+  } else {
+    print("⚠️ Falha ao forçar sync: URL do GAS não encontrada.");
+  }
+}
+
   /// Inicia o "Motor de Tracção" (Polling).
   void startMonitoring() async {
     if (_isPolling) return;
