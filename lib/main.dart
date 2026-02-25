@@ -122,7 +122,7 @@ class MilhasAlertApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Milhas Alert',
+      title: 'PlamilhaSVIP',
       // Aplicamos o tema customizado que definimos em core/theme.dart
       theme: ThemeData.dark().copyWith(
         primaryColor: AppTheme.accent,
@@ -322,19 +322,29 @@ class _AlertsScreenState extends State<AlertsScreen> {
     // Se inscreve na Stream (Analogia: .subscribe() no RxJS ou addEventListener no JS).
     _alertService.alertStream.listen((novosAlertas) async {
       if (mounted) {
-        // Filtra os alertas em tempo real
-        List<Alert> novosQuePassaram = novosAlertas.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
+  // 🚀 ESCUDO ANTI-DUPLICAÇÃO: Só deixa passar o que tiver um ID inédito!
+        List<Alert> alertasIneditos = novosAlertas.where((novo) {
+          // Verifica se ESSE id já existe na nossa lista principal
+          return !_listaAlertasTodos.any((existente) => existente.id == novo.id);
+        }).toList();
+
+        // Se o servidor mandou coisas, mas todas eram repetidas, paramos por aqui silenciosamente.
+        if (alertasIneditos.isEmpty) return;
+
+        // Filtra APENAS os inéditos com as regras do usuário (Companhia, Origem, Destino)
+        List<Alert> novosQuePassaram = alertasIneditos.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
 
         setState(() {
-          _listaAlertasTodos.insertAll(0, novosAlertas);
+          // Insere apenas os inéditos no topo da lista
+          _listaAlertasTodos.insertAll(0, alertasIneditos);
           _aplicarFiltrosNaTela(); 
           _isCarregando = false;
         });
 
-       // 🚀 Feedback Sonoro e Visual (Notificação)
+        // 🚀 Feedback Sonoro e Visual (Notificação)
         if (novosQuePassaram.isNotEmpty) {
           try {
-            if (_isSoundEnabled) { // 🚀 SÓ TOCA SE ESTIVER LIGADO
+            if (_isSoundEnabled) {
               await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
             }
             _mostrarNotificacao(novosQuePassaram.first);

@@ -9,7 +9,17 @@ import '../models/alert.dart';
 ///
 /// Este serviço utiliza o padrão "Polling", que consiste em perguntar ao servidor
 /// periodicamente se há novidades.
+
 class AlertService {
+
+  Timer? _timer;
+  bool _isPolling = false;
+  bool _isFetching = false;
+
+  static final AlertService _instancia = AlertService._interno();
+  factory AlertService() => _instancia;
+  AlertService._interno();
+
   static const String _keyLastSync = "LAST_ALERT_SYNC_V2";
   final DiscoveryService _discovery = DiscoveryService();
   
@@ -22,11 +32,7 @@ class AlertService {
   /// Exposição da Stream para que a UI possa se inscrever e receber atualizações em tempo real.
   Stream<List<Alert>> get alertStream => _alertController.stream;
 
-  Timer? _timer;
-  bool _isPolling = false;
-
   /// 🚀 MÉTODO PARA FORÇAR SINCRONIZAÇÃO (VIA PUSH)
-/// Este método permite que o Push "acorde" o serviço e peça uma busca imediata.
 Future<void> forceSync() async {
   print("🔔 Sincronização forçada via Push iniciada...");
   
@@ -87,22 +93,33 @@ Future<void> forceSync() async {
   /// Analogia: O uso do `http.get` é similar ao `fetch()` ou `axios.get()` no JavaScript,
   /// ou à biblioteca `requests` no Python.
   Future<void> _checkNewAlerts(String gasUrl) async {
+    // 🚀 SE JÁ ESTIVER BUSCANDO, IGNORA O NOVO PEDIDO DO PUSH
+    if (_isFetching) {
+      print("⏳ Já estamos buscando dados no servidor. Ignorando pedido duplo...");
+      return;
+    }
+
+    _isFetching = true;
+  
     final prefs = await SharedPreferences.getInstance();
 
-    // Recupera a data da última sincronização para não baixar alertas repetidos.
-    // Analogia: SharedPreferences funciona como o localStorage do navegador.
-    String lastSync = prefs.getString(_keyLastSync) ?? 
-        DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
+    // Recupera o último sync (ou ontem, se for a primeira vez)
+      String lastSyncStr = prefs.getString(_keyLastSync) ?? 
+          DateTime.now().subtract(const Duration(days: 1)).toIso8601String();
+        
+      // 🚀 A MÁGICA: Puxa o relógio 12 horas para trás para criar uma "Rede de Segurança"
+      // Isso garante que emissões antigas recém-inseridas sejam capturadas.
+      DateTime dataSegura = DateTime.parse(lastSyncStr).subtract(const Duration(hours: 12));
 
     try {
       // 🚀 CONSTRUÇÃO SEGURA DE URL: Garante que caracteres especiais sejam codificados.
       final uriBase = Uri.parse(gasUrl);
       final uriSegura = uriBase.replace(queryParameters: {
         'action': 'SYNC_ALERTS',
-        'since': lastSync,
+        'since': dataSegura.toIso8601String(), // Envia a data com a margem
       });
 
-      final response = await http.get(uriSegura).timeout(const Duration(seconds: 15));
+      final response = await http.get(uriSegura).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         
@@ -133,6 +150,9 @@ Future<void> forceSync() async {
       }
     } catch (e) {
       print("⚠️ Falha na rede ao buscar alertas: $e");
+    }
+    finally {
+      _isFetching = false;
     }
   }
 }
