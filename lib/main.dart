@@ -16,6 +16,8 @@ import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -32,18 +34,61 @@ void callbackDispatcher() {
   });
 }
 
+// 🚀 Handler de mensagens em segundo plano
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Inicialize o Firebase se necessário para esta instância isolada
+  await Firebase.initializeApp();
+  
+  print("📩 Notificação Silenciosa Recebida: ${message.data}");
+  
+  // Se o payload indicar que há novos alertas, dispara a sincronização
+  if (message.data['action'] == 'SYNC_ALERTS') {
+    // Aqui você chama seu serviço de alerta já existente
+    final AlertService service = AlertService();
+    // Você pode adaptar o 'startMonitoring' para fazer apenas um fetch pontual
+    service.startMonitoring(); 
+  }
+}
+
 /// Ponto de entrada do aplicativo.
 ///
 /// Analogia: Equivale ao `main()` em C# ou Java, ou ao início do script global no JS.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // On web the default Firebase app must be created with explicit options
+  // (see https://firebase.flutter.dev/docs/installation/web).
+  // Replace the placeholder values below with your project's configuration
+  // or generate a `firebase_options.dart` using `flutterfire configure`.
+  if (kIsWeb) {
+    await Firebase.initializeApp(
+      options: const FirebaseOptions(
+      apiKey: "AIzaSyAZjnPjOVnbnyzm0pwcUti4aZrWA6F4Fmk",
+        authDomain: 'plamilhasvipaddondevsadm.firebaseapp.com',
+        projectId: 'plamilhasvipaddondevsadm',
+        storageBucket: 'plamilhasvipaddondevsadm.firebasestorage.app',
+        messagingSenderId: '1070254866174',
+        appId: '1:1070254866174:web:0b8a46e3ff211f685cafaf',
+        measurementId: 'G-Z2SHWPV2EZ',
+      ),
+    );
+  } else {
+    await Firebase.initializeApp();
+  }
+
+  // Registro do handler de background
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
   const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  // v20+ uses named parameters for initialize
+  await flutterLocalNotificationsPlugin.initialize(
+    settings: initializationSettings,
+  );
 
   // 🚀 BLINDAGEM MULTIPLATAFORMA: Só liga o motor de fundo se NÃO for Web
   if (!kIsWeb) {
@@ -160,6 +205,17 @@ class _MainNavigatorState extends State<MainNavigator> {
     super.initState();
     // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
+
+    // Listener para notificações firebase quando o app estiver em primeiro plano
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      print("🚀 PUSH RECEBIDO COM O APP ABERTO!");
+
+      if (message.data['action'] == 'SYNC_ALERTS') {
+       print("🚨 Nova passagem detectada via Push! Sincronizando agora...");
+        // chamar sua função de download/atualização aqui
+         baixarDadosGist();
+      }
+    });
   }
 
   @override
@@ -310,10 +366,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
     
     await flutterLocalNotificationsPlugin.show(
-      alerta.id.hashCode,
-      '✈️ ${alerta.programa} - Nova Oportunidade!',
-      alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem,
-      platformChannelSpecifics,
+      id: alerta.id.hashCode,
+      title: '✈️ ${alerta.programa} - Nova Oportunidade!',
+      body: alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem,
+      notificationDetails: platformChannelSpecifics,
     );
   }
 

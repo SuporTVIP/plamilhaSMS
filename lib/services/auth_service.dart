@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'discovery_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 
 enum AuthStatus { autorizado, bloqueado, erroRede }
 
@@ -77,12 +79,38 @@ class AuthService {
     return AuthStatus.autorizado;
   }
 
+ Future<String> _obterFcmToken() async {
+  try {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    // Solicita permissão (necessário para iOS e Android 13+)
+    await messaging.requestPermission();
+    
+    String? token = await messaging.getToken();
+    print("🔑 FCM Token Capturado: $token");
+    return token ?? "";
+  } catch (e) {
+    print("❌ Erro ao capturar FCM Token: $e");
+    return "";
+  }
+}
+
 Future<Map<String, dynamic>> autenticarNoServidor(String email, String token) async {
     String? url = await _discovery.getConfig().then((c) => c?.gasUrl);
     if (url == null) return {"sucesso": false, "mensagem": "Falha de rede."};
 
     String deviceId = await getDeviceId();
-    String bodyData = jsonEncode({"action": "CHECK_DEVICE", "deviceId": deviceId, "token": token, "email": email});
+    // obtain FCM token so server can send push notifications to this device
+    String fcmToken = await _obterFcmToken(); // 🚀 Pega o token antes de enviar
+
+    final Map<String, dynamic> payload = {
+    "action": "CHECK_DEVICE",
+    "email": email,
+    "deviceId": deviceId,
+    "fcmToken": fcmToken,
+    "token": token,
+    };
+
+    String bodyData = jsonEncode(payload);
 
     try {
       http.Response response;
