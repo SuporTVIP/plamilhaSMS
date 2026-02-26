@@ -45,6 +45,10 @@ dependencies:
 
   flutter_local_notifications: ^20.1.0 # Exibe notificações nativas no Android/iOS
 
+  hive: ^2.2.3 # Banco de dados local leve e rápido (Analogia: IndexedDB ou SQLite)
+  hive_flutter: ^1.1.0 # Extensão para integração do Hive com Flutter
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

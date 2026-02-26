@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'discovery_service.dart';
 import '../models/alert.dart';
+import 'cache_service.dart'; // 🚀 Adicione esta linha no topo
 
 /// Serviço responsável por monitorar e buscar novos alertas de milhas no servidor.
 ///
@@ -12,9 +13,25 @@ import '../models/alert.dart';
 
 class AlertService {
 
+  final CacheService _cache = CacheService();
+  DateTime? _lastSyncTime;
+
+  // Rótulo para a UI (ex: "Atualizado há 2 min")
+  String get lastSyncLabel {
+    if (_lastSyncTime == null) return 'Não sincronizado';
+    final diff = DateTime.now().difference(_lastSyncTime!);
+    if (diff.inMinutes < 1) return 'Agora mesmo';
+    if (diff.inMinutes < 60) return 'Há ${diff.inMinutes} min';
+    return 'Há ${diff.inHours}h';
+  }
+
   Timer? _timer;
   bool _isPolling = false;
   bool _isFetching = false;
+
+  final Set<String> _knownIds = {}; // Para evitar duplicatas
+
+  static const int _maxIdsInMemory = 2000; // Limite para evitar consumo excessivo de memória
 
   static final AlertService _instancia = AlertService._interno();
   factory AlertService() => _instancia;
@@ -47,10 +64,18 @@ Future<void> forceSync() async {
 }
 
   /// Inicia o "Motor de Tracção" (Polling).
-  void startMonitoring() async {
+void startMonitoring() async {
     if (_isPolling) return;
+    
+    // 🚀 SWR: Carrega cache instantaneamente antes da rede
+    await _cache.init();
+    final cached = _cache.loadAlerts();
+    if (cached.isNotEmpty) {
+      _knownIds.addAll(cached.map((a) => a.id));
+      _alertController.add(cached); // Já exibe na tela!
+    }
+
     _isPolling = true;
-    print("🚀 Motor de Polling Iniciado");
     _scheduleNextPoll(); 
   }
 
@@ -86,6 +111,18 @@ Future<void> forceSync() async {
     // 3. Agenda a próxima rodada (Recursividade Controlada por Timer)
     print("⏳ Próxima checagem em $intervalo segundos.");
     _timer = Timer(Duration(seconds: intervalo), _scheduleNextPoll);
+  }
+
+  /// Limpa o cache de IDs antigos para evitar consumo excessivo de memória.
+  void _limparCacheSeNecessario() {
+    if (_knownIds.length > _maxIdsInMemory) {
+      print("🧹 Limpando IDs antigos do Set para economizar RAM");
+      // Remove os IDs mais antigos (os primeiros inseridos)
+      List<String> listaTemporaria = _knownIds.toList();
+      _knownIds.clear();
+      // Mantém apenas os 1000 IDs mais recentes
+      _knownIds.addAll(listaTemporaria.skip(listaTemporaria.length - 1000));
+    }
   }
 
   /// Realiza a chamada HTTP para buscar novos alertas desde a última sincronização.
@@ -131,14 +168,40 @@ Future<void> forceSync() async {
             List<dynamic> rawList = body['data'];
             
             if (rawList.isNotEmpty) {
-              // Transforma a lista de mapas brutos em uma lista de Objetos Alert (Tipagem Forte)
-              List<Alert> novosAlertas = rawList.map((j) => Alert.fromJson(j)).toList();
-              print("🔔 ${novosAlertas.length} Novos Alertas extraídos com sucesso!");
-              
-              // Notifica a Stream (Avisa a tela que chegaram novidades)
-              _alertController.add(novosAlertas);
-              
-              // Atualiza o timestamp da última sincronização com a hora do servidor
+              // 1. Converte os dados brutos em objetos
+              List<Alert> vindosDoServidor = rawList.map((j) => Alert.fromJson(j)).toList();
+
+              // 🚀 ADICIONE ESTE PRINT PARA VER O QUE CHEGOU
+              print("📡 O servidor enviou ${vindosDoServidor.length} alertas (Margem de 12h).");
+
+              // 2. 🚀 A MÁGICA: Filtra apenas os IDs que o app ainda NÃO conhece 
+              List<Alert> novosAlertas = vindosDoServidor
+                  .where((alerta) => !_knownIds.contains(alerta.id))
+                  .toList();
+
+              // 3. Se houver algo realmente novo, processa 
+              if (novosAlertas.isNotEmpty) {
+                print("🔔 ${novosAlertas.length} alertas INÉDITOS encontrados!");
+                
+                // Adiciona os IDs novos ao nosso Set de memória 
+                _knownIds.addAll(novosAlertas.map((a) => a.id));
+
+                // Notifica a tela apenas com o que é novo
+                _alertController.add(novosAlertas);
+                _lastSyncTime = DateTime.now(); // Atualiza o marcador de tempo [cite: 85]
+
+                // 🚀 Persiste a lista atualizada no cache local
+                final todos = _cache.loadAlerts();
+                _cache.saveAlerts([...novosAlertas, ...todos]);
+                
+
+                // Mantém o Set saudável (limpeza de janela temporal) 
+                _limparCacheSeNecessario();
+              }else{
+                print("🛡️ Escudo ativado! Todos os alertas já estavam na tela. Nada foi duplicado.");
+              }
+
+              // Atualiza o timestamp (continua igual ao seu)
               if (body['serverTime'] != null) {
                 await prefs.setString(_keyLastSync, body['serverTime']);
               }

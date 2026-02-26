@@ -191,7 +191,7 @@ class MainNavigator extends StatefulWidget {
   State<MainNavigator> createState() => _MainNavigatorState();
 }
 
-class _MainNavigatorState extends State<MainNavigator> {
+class _MainNavigatorState extends State<MainNavigator> with WidgetsBindingObserver {
   int _currentIndex = 1; // Começa na aba central (Licença)
   final AlertService alertService = AlertService();
 
@@ -204,6 +204,9 @@ class _MainNavigatorState extends State<MainNavigator> {
   @override
   void initState() {
     super.initState();
+
+    // Observa mudanças no ciclo de vida do app (foreground/background)
+    WidgetsBinding.instance.addObserver(this);
     // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
     alertService.startMonitoring();
@@ -259,7 +262,7 @@ class AlertsScreen extends StatefulWidget {
   State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
-class _AlertsScreenState extends State<AlertsScreen> {
+class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver {
   final AlertService _alertService = AlertService();
   final List<Alert> _listaAlertasTodos = []; // Todos os dados recebidos
   List<Alert> _listaAlertasFiltrados = [];   // Apenas o que passa no filtro
@@ -398,6 +401,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   /// Analogia: Equivale ao retorno de uma função no `useEffect` do React (cleanup).
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _alertService.stopMonitoring();
     super.dispose();
   }
@@ -418,26 +422,44 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
+  // 🚀 O GATILHO DE RETORNO (LIFECYCLE)
+@override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      print("📱 App voltou para o primeiro plano! Sincronizando...");
+      // 🚀 AGORA SIM! Usando a variável correta (com underline)
+      _alertService.forceSync(); 
+    }
+  }
   @override
   Widget build(BuildContext context) {
     // Scaffold: A estrutura básica de layout da página (como o <body> no HTML).
     return Scaffold(
       appBar: AppBar(
-        // Row: Organiza os elementos horizontalmente (Analogia: display: flex; flex-direction: row).
-        title: const Row(
-          mainAxisSize: MainAxisSize.min, // Comporta-se como 'width: fit-content'
+        // 🚀 O title agora é uma Column para caber o subtítulo de sincronia
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.radar, color: AppTheme.accent, size: 22),
-            // SizedBox: Cria um espaço fixo entre os elementos (Analogia: margin-right).
-            SizedBox(width: 8),
-            Text(
-              "FEED DE EMISSÕES",
-              style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2, fontSize: 18),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.radar, color: AppTheme.accent, size: 22),
+                const SizedBox(width: 8),
+                const Text(
+                  "FEED DE EMISSÕES",
+                  style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 2, fontSize: 18),
+                ),
+                const Text(
+                  "VIP",
+                  style: TextStyle(fontWeight: FontWeight.w300, color: AppTheme.accent, letterSpacing: 2, fontSize: 18),
+                ),
+              ],
             ),
-            Text(
-              "VIP",
-              style: TextStyle(fontWeight: FontWeight.w300, color: AppTheme.accent, letterSpacing: 2, fontSize: 18),
-            ),
+          // 🚀 Use o Singleton diretamente com parênteses: AlertService()
+          Text(
+            AlertService().lastSyncLabel, 
+            style: const TextStyle(fontSize: 10, color: AppTheme.muted),
+          )
           ],
         ),
         centerTitle: true,

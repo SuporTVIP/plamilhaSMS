@@ -1,9 +1,6 @@
 import 'dart:convert';
 
 /// Representa um alerta de emissão de passagem aérea.
-///
-/// Esta classe funciona como um "Contrato" ou "Data Class" (como em Python ou C#),
-/// definindo quais dados uma notificação de milhas deve conter.
 class Alert {
   final String id;
   final String mensagem;
@@ -11,7 +8,6 @@ class Alert {
   final DateTime data;
   final String? link;
   
-  // 🚀 Metadados Extraídos: Informações detalhadas processadas
   final String trecho;
   final String dataIda;
   final String dataVolta;
@@ -21,7 +17,6 @@ class Alert {
   final String valorBalcao; 
   final String detalhes; 
 
-  /// Construtor padrão da classe Alert.
   Alert({
     required this.id,
     required this.mensagem,
@@ -38,26 +33,17 @@ class Alert {
     this.detalhes = "N/A",
   });
 
-  /// Constrói uma instância de Alert a partir de um Map (JSON).
-  ///
-  /// Analogia: Este método funciona como o `json.loads()` do Python ou `JSON.parse()` do JS,
-  /// mas com o benefício de transformar os dados brutos em um Objeto Tipado.
-  /// No Dart, usamos o padrão 'factory' para criar construtores que retornam instâncias processadas.
   factory Alert.fromJson(Map<String, dynamic> json) {
-    // Tenta ler a string JSON que veio da Coluna 'metadados'
-    // Map<String, dynamic> no Dart é equivalente a um Dicionário (dict) em Python
-    // ou um Objeto literal em JavaScript.
     Map<String, dynamic> meta = {};
     try {
       if (json['metadados'] != null && json['metadados'].toString().isNotEmpty) {
-        // jsonDecode transforma uma String JSON em um Dicionário/Mapa.
         meta = jsonDecode(json['metadados']);
       }
     } catch (e) {
       print("Erro ao parsear metadados: $e");
     }
 
-return Alert(
+    return Alert(
       id: json['id'].toString(),
       mensagem: json['mensagem'] ?? '',
       programa: json['programa'] ?? 'Desconhecido',
@@ -70,7 +56,26 @@ return Alert(
       valorFabricado: meta['valor_fabricado'] ?? 'N/A',
       valorEmissao: meta['valor_emissao'] ?? 'N/A',
       valorBalcao: meta['valor_balcao'] ?? 'N/A',
-      detalhes: meta['detalhes'] ?? '', // 🚀 PUXA DO JSON AQUI
+      detalhes: meta['detalhes'] ?? '',
     );
   }
-}
+
+  // 🚀 AQUI ESTÁ A CORREÇÃO: O toJson() agora está DENTRO da classe Alert
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'programa': programa,
+      'trecho': trecho,
+      'milhas': milhas,
+      'data': data.toIso8601String(),
+      'link': link,
+      'detalhes': detalhes,
+      'mensagem': mensagem,
+      'dataIda': dataIda,
+      'dataVolta': dataVolta,
+      'valorFabricado': valorFabricado,
+      'valorEmissao': valorEmissao,
+      'valorBalcao': valorBalcao,
+    };
+  }
+} // <--- A classe termina aqui
