@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -207,6 +208,11 @@ class _MainNavigatorState extends State<MainNavigator> with WidgetsBindingObserv
 
     // Observa mudanças no ciclo de vida do app (foreground/background)
     WidgetsBinding.instance.addObserver(this);
+
+  // 🚀 NOVO: Pede a permissão pro usuário logo que ele abre o app
+    FlutterLocalNotificationsPlugin().resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
+
     // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
     alertService.startMonitoring();
