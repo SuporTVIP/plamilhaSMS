@@ -1,28 +1,56 @@
+import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/alert.dart';
-import 'dart:convert';
 
+/// Serviço de persistência local utilizando Hive.
+///
+/// Responsável por salvar e recuperar o histórico de alertas para suportar a
+/// estratégia SWR (Stale-While-Revalidate).
 class CacheService {
+  // Configurações do Cache
   static const String _boxName = 'alerts_cache';
-  static const int _maxAlerts = 500; // Limite para não sobrecarregar o storage 
 
+  /// Limite máximo de alertas armazenados para evitar consumo excessivo de armazenamento.
+  static const int _maxAlerts = 500;
+
+  /// Inicializa o mecanismo de armazenamento local (Hive).
   Future<void> init() async {
     await Hive.initFlutter();
-    await Hive.openBox(_boxName); // Abre o "baú" de dados 
+    await Hive.openBox(_boxName);
   }
 
-  // Salva a lista convertendo os objetos para JSON strings
+  /// Salva uma lista de alertas no cache local.
+  ///
+  /// Converte os objetos [Alert] em strings JSON para armazenamento seguro no Hive.
+  /// Respeita o limite de [_maxAlerts].
   Future<void> saveAlerts(List<Alert> alerts) async {
-    final box = Hive.box(_boxName);
-    final toSave = alerts.take(_maxAlerts).map((e) => jsonEncode(e.toJson())).toList();
-    await box.put('data', toSave);
+    final Box box = Hive.box(_boxName);
+    final List<String> dataToSave = alerts
+        .take(_maxAlerts)
+        .map((alert) => jsonEncode(alert.toJson()))
+        .toList();
+
+    await box.put('data', dataToSave);
   }
 
-  // Carrega os alertas do cache
+  /// Recupera a lista de alertas armazenados no cache.
+  ///
+  /// Retorna uma lista vazia se não houver dados no cache ou se houver falha no parsing.
   List<Alert> loadAlerts() {
-    final box = Hive.box(_boxName);
-    final List<dynamic>? cached = box.get('data');
-    if (cached == null) return [];
-    return cached.map((e) => Alert.fromJson(jsonDecode(e))).toList();
+    final Box box = Hive.box(_boxName);
+    final List<dynamic>? cachedData = box.get('data');
+
+    if (cachedData == null) {
+      return [];
+    }
+
+    try {
+      return cachedData
+          .map((jsonStr) => Alert.fromJson(jsonDecode(jsonStr)))
+          .toList();
+    } catch (e) {
+      print("⚠️ Erro ao carregar alertas do cache: $e");
+      return [];
+    }
   }
 }

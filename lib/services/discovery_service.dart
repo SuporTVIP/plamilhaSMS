@@ -4,15 +4,37 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Configurações para o Modo de Economia (Redução de tráfego em horários de baixo uso).
 class EconomyMode {
+  /// Se o modo de economia está ativo globalmente.
   final bool enabled;
+
+  /// Horário de início no formato "HH:mm".
   final String startTime;
+
+  /// Horário de término no formato "HH:mm".
   final String endTime;
+
+  /// Multiplicador do intervalo de busca (ex: 4x mais lento).
   final int multiplier;
 
-  EconomyMode({required this.enabled, required this.startTime, required this.endTime, required this.multiplier});
+  /// Construtor padrão para o modo de economia.
+  EconomyMode({
+    required this.enabled,
+    required this.startTime,
+    required this.endTime,
+    required this.multiplier,
+  });
 
+  /// Cria uma instância de [EconomyMode] a partir de dados JSON.
   factory EconomyMode.fromJson(Map<String, dynamic>? json) {
-    if (json == null) return EconomyMode(enabled: false, startTime: "22:30", endTime: "06:00", multiplier: 1);
+    if (json == null) {
+      return EconomyMode(
+        enabled: false,
+        startTime: "22:30",
+        endTime: "06:00",
+        multiplier: 1,
+      );
+    }
+
     return EconomyMode(
       enabled: json['enabled'] ?? false,
       startTime: json['start_time'] ?? "22:30",
@@ -21,32 +43,56 @@ class EconomyMode {
     );
   }
 
-  /// Verifica se o horário atual está dentro da janela de economia.
+  /// Verifica se o horário atual está dentro da janela definida para economia de tráfego.
   bool isEconomyTime(DateTime now) {
     if (!enabled) return false;
+
     try {
-      final startMins = int.parse(startTime.split(':')[0]) * 60 + int.parse(startTime.split(':')[1]);
-      final endMins = int.parse(endTime.split(':')[0]) * 60 + int.parse(endTime.split(':')[1]);
-      final currentMins = now.hour * 60 + now.minute;
+      final int startMins = _toMinutes(startTime);
+      final int endMins = _toMinutes(endTime);
+      final int currentMins = now.hour * 60 + now.minute;
 
       if (startMins > endMins) {
         return currentMins >= startMins || currentMins <= endMins;
       } else {
         return currentMins >= startMins && currentMins <= endMins;
       }
-    } catch (e) { return false; }
+    } catch (e) {
+      print("⚠️ Erro ao calcular horário de economia: $e");
+      return false;
+    }
+  }
+
+  /// Converte string "HH:mm" em total de minutos desde o início do dia.
+  int _toMinutes(String time) {
+    final List<String> parts = time.split(':');
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
   }
 }
 
-/// Representa o objeto de configuração obtido remotamente.
+/// Representa o objeto de configuração obtido remotamente via serviço de Discovery.
 class DiscoveryConfig {
+  /// URL do servidor principal (Google Apps Script).
   final String gasUrl;
+
+  /// Status do sistema (ex: 'active', 'maintenance').
   final String status;
+
+  /// Intervalo base de polling em segundos.
   final int pollingIntervalSeconds;
+
+  /// Configurações de economia de dados para horários alternativos.
   final EconomyMode economyMode;
 
-  DiscoveryConfig({required this.gasUrl, required this.status, this.pollingIntervalSeconds = 90, required this.economyMode});
+  /// Construtor para configuração de descoberta.
+  DiscoveryConfig({
+    required this.gasUrl,
+    required this.status,
+    this.pollingIntervalSeconds = 90,
+    required this.economyMode,
+  });
 
+  /// Cria uma instância de [DiscoveryConfig] a partir de dados JSON.
   factory DiscoveryConfig.fromJson(Map<String, dynamic> json) {
     return DiscoveryConfig(
       gasUrl: json['gas_url'],
@@ -56,9 +102,10 @@ class DiscoveryConfig {
     );
   }
 
+  /// Indica se o sistema está operante e aceitando conexões.
   bool get isActive => status == 'active';
 
-  /// Retorna o tempo real de espera baseado na hora atual e no modo de economia.
+  /// Retorna o intervalo de espera atualizado, considerando o modo de economia.
   int get currentPollingInterval {
     if (economyMode.isEconomyTime(DateTime.now())) {
       return pollingIntervalSeconds * economyMode.multiplier;
@@ -67,38 +114,38 @@ class DiscoveryConfig {
   }
 }
 
-/// Serviço de "Discovery" que descobre onde o servidor principal está hospedado.
+/// Serviço de Discovery para localização dinâmica do servidor principal.
 ///
-/// Analogia: Funciona como um "Remote Config" do Firebase ou uma busca dinâmica de DNS.
-/// Ele permite mudar a URL do servidor ou o intervalo de busca sem precisar atualizar o App na loja.
+/// Analogia: Funciona como um Remote Config do Firebase ou DNS dinâmico,
+/// permitindo atualizar endpoints sem novos deploys.
 class DiscoveryService {
-  // URL do Gist que contém as configurações em formato JSON.
+  // Configurações
   static const String _discoveryUrl = "https://gist.githubusercontent.com/SuporTVIP/ffb616b4d3b24af5071c10c9be2e6895/raw/sms_discovery.json";
   static const String _keyCache = "DISCOVERY_CACHE_V2";
 
-  /// Obtém a configuração atual, tentando primeiro a internet e depois o cache local.
+  /// Obtém a configuração atual através da rede, com fallback para o cache local.
   Future<DiscoveryConfig?> getConfig() async {
-    final prefs = await SharedPreferences.getInstance();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
     
     try {
-      // Adicionamos um parâmetro de tempo (?v=...) na URL para forçar o GitHub a
-      // ignorar o cache do navegador e entregar a versão mais nova.
-      final urlSemCache = "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
-      final response = await http.get(Uri.parse(urlSemCache)).timeout(const Duration(seconds: 10));
+      // Força a atualização do cache do provedor (GitHub Gist) via timestamp
+      final String urlWithNoCache = "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
+      final response = await http.get(Uri.parse(urlWithNoCache)).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        // Atualiza o cache local (Analogia: SharedPreferences = localStorage do JS)
         await prefs.setString(_keyCache, response.body);
         return DiscoveryConfig.fromJson(jsonDecode(response.body));
       }
     } catch (e) {
-      print("⚠️ Erro ao acessar Gist. Tentando cache local...");
+      print("⚠️ Erro ao acessar o Discovery na rede. Tentando cache local...");
     }
 
-    // Fallback: Se estiver sem internet, usa o que foi salvo na última vez que funcionou.
-    final cached = prefs.getString(_keyCache);
-    if (cached != null) return DiscoveryConfig.fromJson(jsonDecode(cached));
+    // Fallback: Tenta carregar a última configuração válida salva localmente
+    final String? cachedJson = prefs.getString(_keyCache);
+    if (cachedJson != null) {
+      return DiscoveryConfig.fromJson(jsonDecode(cachedJson));
+    }
     
-    return null; // Sistema crítico offline (sem cache e sem rede)
+    return null;
   }
 }
