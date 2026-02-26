@@ -1,22 +1,50 @@
 import 'dart:convert';
 
 /// Representa um alerta de emissão de passagem aérea.
+///
+/// Esta classe contém todos os dados necessários para exibir um alerta de emissão,
+/// incluindo informações de trecho, milhas, valores e metadados.
 class Alert {
+  /// Identificador único do alerta.
   final String id;
-  final String mensagem;
-  final String programa;
-  final DateTime data;
-  final String? link;
-  
-  final String trecho;
-  final String dataIda;
-  final String dataVolta;
-  final String milhas;
-  final String valorFabricado;
-  final String valorEmissao;
-  final String valorBalcao; 
-  final String detalhes; 
 
+  /// Mensagem completa do alerta.
+  final String mensagem;
+
+  /// Programa de fidelidade (ex: LATAM, SMILES, AZUL).
+  final String programa;
+
+  /// Data e hora da captura do alerta.
+  final DateTime data;
+
+  /// Link externo para a emissão ou detalhes adicionais.
+  final String? link;
+
+  /// Trecho da viagem (ex: GRU-JFK).
+  final String trecho;
+
+  /// Data de ida da viagem.
+  final String dataIda;
+
+  /// Data de volta da viagem (se aplicável).
+  final String dataVolta;
+
+  /// Quantidade de milhas necessária para a emissão.
+  final String milhas;
+
+  /// Valor fabricado calculado para a milha.
+  final String valorFabricado;
+
+  /// Valor total estimado da emissão.
+  final String valorEmissao;
+
+  /// Valor de mercado (balcão) para comparação.
+  final String valorBalcao;
+
+  /// Detalhes adicionais sobre a emissão.
+  final String detalhes;
+
+  /// Construtor padrão para a classe [Alert].
   Alert({
     required this.id,
     required this.mensagem,
@@ -33,6 +61,10 @@ class Alert {
     this.detalhes = "N/A",
   });
 
+  /// Cria uma instância de [Alert] a partir de um mapa JSON.
+  ///
+  /// O parâmetro [json] deve conter as chaves retornadas pela API do GAS.
+  /// Metadados são processados separadamente a partir da string JSON no campo 'metadados'.
   factory Alert.fromJson(Map<String, dynamic> json) {
     Map<String, dynamic> meta = {};
     try {
@@ -60,7 +92,7 @@ class Alert {
     );
   }
 
-  // 🚀 AQUI ESTÁ A CORREÇÃO: O toJson() agora está DENTRO da classe Alert
+  /// Converte a instância de [Alert] em um mapa JSON para persistência local.
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -78,4 +110,4 @@ class Alert {
       'valorBalcao': valorBalcao,
     };
   }
-} // <--- A classe termina aqui
+}
