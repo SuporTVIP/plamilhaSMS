@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1070254866174",
+    "project_id": "plamilhasvipaddondevsadm",
+    "storage_bucket": "plamilhasvipaddondevsadm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1070254866174:android:dc1e1533d6a23d3a5cafaf",
+        "android_client_info": {
+          "package_name": "com.suportvips.milhasalert.milhas_alert"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1070254866174-0uua1heg5tkbdh5f11ju3t0q4dasbima.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEQdTkwEtMqYxqG4k9aMTJNZwSR-HkX4w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1070254866174-0uua1heg5tkbdh5f11ju3t0q4dasbima.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

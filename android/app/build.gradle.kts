@@ -3,6 +3,7 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services") // Adicione o plugin do Google Services para Firebase
 }
 
 android {
@@ -46,5 +47,12 @@ flutter {
 
 // 🚀 3. PACOTE DE TRADUÇÃO DO JAVA ADICIONADO AQUI NO FINAL
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // 🚀 Sintaxe correta para Kotlin DSL (.kts)
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
+    
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-messaging")
+    
+    // O desugaring também precisa de parênteses e aspas duplas
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

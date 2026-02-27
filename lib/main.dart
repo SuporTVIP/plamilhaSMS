@@ -65,7 +65,7 @@ void main() async {
   if (kIsWeb) {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
-      apiKey: "AIzaSyAZjnPjOVnbnyzm0pwcUti4aZrWA6F4Fmk",
+        apiKey: "AIzaSyAZjnPjOVnbnyzm0pwcUti4aZrWA6F4Fmk",
         authDomain: 'plamilhasvipaddondevsadm.firebaseapp.com',
         projectId: 'plamilhasvipaddondevsadm',
         storageBucket: 'plamilhasvipaddondevsadm.firebasestorage.app',
@@ -78,8 +78,18 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  // Registro do handler de background
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // 🚀 COMENTADO TEMPORARIAMENTE: Como o Firebase no Android tá desligado, isso aqui daria erro
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  }
+
+  // 🚀 NOVO: Imprime o Token FCM para provarmos que a conexão deu certo!
+    try {
+      String? token = await FirebaseMessaging.instance.getToken();
+      print("🔥 FIREBASE CONECTADO! TOKEN FCM: $token");
+    } catch (e) {
+      print("⚠️ Erro ao buscar Token do Firebase: $e");
+    }
 
   // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');

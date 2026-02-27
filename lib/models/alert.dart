@@ -96,9 +96,11 @@ class Alert {
   ///
   /// O parâmetro [json] deve conter as chaves retornadas pela API do GAS.
   /// Metadados são processados separadamente a partir da string JSON no campo 'metadados'.
-factory Alert.fromJson(Map<String, dynamic> json) {
+// 🚀 2. COMO O APP LÊ DA INTERNET OU DO CACHE
+  factory Alert.fromJson(Map<String, dynamic> json) {
     Map<String, dynamic> meta = {};
     try {
+      // Se a informação veio da Internet, ela terá a chave 'metadados'
       if (json['metadados'] != null && json['metadados'].toString().isNotEmpty) {
         meta = jsonDecode(json['metadados']);
       }
@@ -106,8 +108,6 @@ factory Alert.fromJson(Map<String, dynamic> json) {
       print("Erro ao parsear metadados: $e");
     }
 
-    // 🚀 A MÁGICA AQUI: Tenta pegar o ID Semântico dos metadados. 
-    // Se não achar (passagens antigas), usa o ID padrão da coluna.
     String alertaId = meta['id_app']?.toString() ?? json['id']?.toString() ?? 'ID_DESCONHECIDO';
 
     return Alert(
@@ -116,14 +116,15 @@ factory Alert.fromJson(Map<String, dynamic> json) {
       programa: json['programa'] ?? 'Desconhecido',
       data: DateTime.parse(json['data']).toLocal(),
       link: json['link'],
-      trecho: meta['trecho'] ?? 'N/A',
-      dataIda: _padronizarData(meta['data_ida'] ?? 'N/A'),
-      dataVolta: _padronizarData(meta['data_volta'] ?? 'N/A'),
-      milhas: meta['milhas'] ?? 'N/A',
-      valorFabricado: meta['valor_fabricado'] ?? 'N/A',
-      valorEmissao: meta['valor_emissao'] ?? 'N/A',
-      valorBalcao: meta['valor_balcao'] ?? 'N/A',
-      detalhes: meta['detalhes'] ?? '',
+      // 👇 A MÁGICA: Tenta ler direto do Cache (json) OU da Internet (meta)
+      trecho: json['trecho'] ?? meta['trecho'] ?? 'N/A',
+      dataIda: _padronizarData(json['dataIda'] ?? meta['data_ida'] ?? 'N/A'),
+      dataVolta: _padronizarData(json['dataVolta'] ?? meta['data_volta'] ?? 'N/A'),
+      milhas: json['milhas'] ?? meta['milhas'] ?? 'N/A',
+      valorFabricado: json['valorFabricado'] ?? meta['valor_fabricado'] ?? 'N/A',
+      valorEmissao: json['valorEmissao'] ?? meta['valor_emissao'] ?? 'N/A',
+      valorBalcao: json['valorBalcao'] ?? meta['valor_balcao'] ?? 'N/A',
+      detalhes: json['detalhes'] ?? meta['detalhes'] ?? '',
     );
   }
 
@@ -131,18 +132,19 @@ factory Alert.fromJson(Map<String, dynamic> json) {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'programa': programa,
-      'trecho': trecho,
-      'milhas': milhas,
-      'data': data.toIso8601String(),
-      'link': link,
-      'detalhes': detalhes,
-      'mensagem': mensagem,
-      'dataIda': dataIda,
-      'dataVolta': dataVolta,
+      'mensagem':       mensagem,
+      'programa':       programa,
+      'data':           data.toIso8601String(),
+      'link':           link,
+ 
+      'trecho':         trecho,
+      'dataIda':        dataIda,
+      'dataVolta':      dataVolta,
+      'milhas':         milhas,
       'valorFabricado': valorFabricado,
-      'valorEmissao': valorEmissao,
-      'valorBalcao': valorBalcao,
+      'valorEmissao':   valorEmissao,
+      'valorBalcao':    valorBalcao,
+      'detalhes':       detalhes,
     };
   }
 }
