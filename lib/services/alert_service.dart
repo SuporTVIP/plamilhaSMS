@@ -43,7 +43,7 @@ class AlertService {
 
   Future<void> _initNotifications() async {
     if (_notificationsInitialized) return;
-    const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/launcher_icon');
     const DarwinInitializationSettings iosInit = DarwinInitializationSettings();
     const InitializationSettings initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
     await _localNotifications.initialize(settings: initSettings);
@@ -114,14 +114,18 @@ Future<void> _checkNewAlerts(String gasUrl) async {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String lastSyncStr = prefs.getString(_keyLastSync) ?? 
-          DateTime.now().subtract(const Duration(hours: 12)).toIso8601String();
+      
+      // 🚀 A MARRETA DE DADOS: Ignora a última sincronia e pede SEMPRE os últimos 3 dias!
+      // O seu escudo "_knownIds" vai barrar os repetidos em silêncio, deixando só a novidade passar.
+      final String lastSyncStr = DateTime.now().subtract(const Duration(days: 3)).toIso8601String(); 
 
       final uriBase = Uri.parse(gasUrl);
       final uriFinal = uriBase.replace(queryParameters: {
         'action': 'SYNC_ALERTS',
         'since': lastSyncStr,
       });
+
+      print("🔍 [RAIO-X] Buscando dados a partir de: $lastSyncStr");
 
       final response = await http.get(uriFinal).timeout(const Duration(seconds: 30));
 
@@ -130,33 +134,38 @@ Future<void> _checkNewAlerts(String gasUrl) async {
 
         if (body['status'] == 'success') {
           final List<dynamic> rawData = body['data'];
+          print("📥 [RAIO-X] O Servidor (GAS) retornou ${rawData.length} passagens brutas.");
 
           if (rawData.isNotEmpty) {
             final List<Alert> alertsFromServer = rawData.map((j) => Alert.fromJson(j)).toList();
 
-            // 🚀 FILTRO DIÁRIO (FETCH): Limita as emissões ao dia atual (00:00 em diante)
             final hoje = DateTime.now();
             final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
 
-            final List<Alert> newAlerts = alertsFromServer
-                .where((a) => !_knownIds.contains(a.id) && a.data.isAfter(inicioDoDia))
-                .toList();
+            final List<Alert> newAlerts = alertsFromServer.where((a) {
+              bool isNew = !_knownIds.contains(a.id);
+              bool isToday = a.data.isAfter(inicioDoDia);
+              
+              if (!isToday) print("❌ [RAIO-X] Descartado (Data Antiga): ${a.trecho} - Data da Passagem: ${a.data}");
+              if (!isNew) print("❌ [RAIO-X] Descartado (Duplicado): ${a.trecho}");
+              
+              return isNew && isToday;
+            }).toList();
+
+            print("🚦 [RAIO-X] Passaram pelos filtros de tempo/duplicação: ${newAlerts.length} inéditas.");
 
             if (newAlerts.isNotEmpty) {
               _knownIds.addAll(newAlerts.map((a) => a.id));
-              _alertController.add(newAlerts);
+              _alertController.add(newAlerts); // 🚀 Envia para a tela!
               _lastSyncTime = DateTime.now();
 
               final existingInCache = _cache.loadAlerts();
               _cache.saveAlerts([...newAlerts, ...existingInCache]);
 
-              // 🚀 LÓGICA DE NOTIFICAÇÃO DE POLLING
-             if (_isFirstFetch) {
+              if (_isFirstFetch) {
                 _isFirstFetch = false;
               }
-              print("🤫 Polling encontrou ${newAlerts.length} alertas e salvou em silêncio.");
-
-              _limparCacheSeNecessario();
+              print("✅ [RAIO-X] Dados enviados para a interface gráfica!");
             }
 
             if (body['serverTime'] != null) {
@@ -166,7 +175,7 @@ Future<void> _checkNewAlerts(String gasUrl) async {
         }
       }
     } catch (e) {
-      print("⚠️ Erro na sincronização: $e");
+      print("⚠️ [RAIO-X] Erro na sincronização: $e");
     } finally {
       _isFetching = false;
     }

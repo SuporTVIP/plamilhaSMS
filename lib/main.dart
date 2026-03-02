@@ -36,19 +36,56 @@ void callbackDispatcher() {
 }
 
 // 🚀 Handler de mensagens em segundo plano
+// 🚀 O NOVO PORTEIRO NINJA (Substitua a sua função antiga por esta)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Inicialize o Firebase se necessário para esta instância isolada
   await Firebase.initializeApp();
-  
-  print("📩 Notificação Silenciosa Recebida: ${message.data}");
-  
-  // Se o payload indicar que há novos alertas, dispara a sincronização
-  if (message.data['action'] == 'SYNC_ALERTS') {
-    // Aqui você chama seu serviço de alerta já existente
-    final AlertService service = AlertService();
-    // Você pode adaptar o 'startMonitoring' para fazer apenas um fetch pontual
-    service.startMonitoring(); 
+  print("📩 Push Oculto Recebido (Tela Apagada): ${message.data}");
+
+  // Confere se é uma mensagem do robô
+  if (message.data['action'] == 'SYNC_ALERTS' || message.data['tipo'] == 'NOVO_ALERTA') {
+
+    final prefs = await SharedPreferences.getInstance();
+    bool querLatam = prefs.getBool('filtro_latam') ?? true;
+    bool querSmiles = prefs.getBool('filtro_smiles') ?? true;
+    bool querAzul = prefs.getBool('filtro_azul') ?? true;
+
+    String programa = (message.data['programa'] ?? 'Geral').toUpperCase();
+    String trecho = message.data['trecho'] ?? 'Nova Passagem Encontrada!';
+
+    // Aplica os filtros com o app fechado
+    bool passou = false;
+    if (programa.contains('LATAM') && querLatam) passou = true;
+    else if (programa.contains('SMILES') && querSmiles) passou = true;
+    else if (programa.contains('AZUL') && querAzul) passou = true;
+    else if (!programa.contains('LATAM') && !programa.contains('SMILES') && !programa.contains('AZUL')) passou = true;
+
+    if (passou) {
+      print("✅ Filtro Aprovado no Background! Acordando o celular...");
+      final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
+
+      // 🚀 ATENÇÃO: Usando exatamente o mesmo canal "emissao_vip_v2" e som que você configurou
+      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'emissao_vip_v2',
+        'Emissões FãMilhas',
+        channelDescription: 'Avisos de novas passagens',
+        importance: Importance.max,
+        priority: Priority.high,
+        sound: RawResourceAndroidNotificationSound('alerta'), // 🔊 Chama o arquivo alerta.mp3
+        playSound: true,
+      );
+
+      const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+
+      await localNotif.show(
+        id: DateTime.now().millisecond,
+        title: "✈️ Oportunidade: $programa",
+        body: trecho,
+        notificationDetails: platformDetails,
+      );
+    } else {
+      print("🤫 Push bloqueado no background pelo filtro do usuário.");
+    }
   }
 }
 
@@ -92,7 +129,7 @@ void main() async {
     }
 
   // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
-  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
   const InitializationSettings initializationSettings = InitializationSettings(
     android: initializationSettingsAndroid,
   );
@@ -290,6 +327,8 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
 
   // 🚀 1. VARIÁVEL DO SOM
   bool _isSoundEnabled = true; 
+  bool _needsWebAudioInteraction = kIsWeb; // 🚀 Web precisa de interação para ativar o áudio
+
 
   @override
   void initState() {
@@ -389,7 +428,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
       channelDescription: 'Avisos de novas passagens',
       importance: Importance.max,
       priority: Priority.high,
-      icon: '@mipmap/ic_launcher',
+      icon: '@mipmap/launcher_icon', // 🚀 GARANTE QUE O ÍCONE APAREÇA MESMO EM BACKGROUND
       // 🚀 A MÁGICA ACONTECE AQUI: Aponta para a pasta res/raw nativa do Android
       sound: const RawResourceAndroidNotificationSound('alerta'), 
       playSound: _isSoundEnabled, // 🚀 OBEDECE AO BOTÃO AQUI TAMBÉM
@@ -479,17 +518,71 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           ],
         ),
         centerTitle: true,
-        actions: [
-          // 🚀 NOVO BOTÃO DE VOLUME
-          IconButton(
-            icon: Icon(
-              _isSoundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-              color: _isSoundEnabled ? AppTheme.accent : AppTheme.muted,
-            ),
-            tooltip: "Ligar/Desligar Som",
-            onPressed: _toggleSound,
+actions: [
+          // 🚀 NOVO BOTÃO DE VOLUME ANIMADO (FURA-BLOQUEIO WEB)
+          Builder(
+            builder: (context) {
+              Widget btn = IconButton(
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      _isSoundEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                      color: _isSoundEnabled ? AppTheme.accent : AppTheme.muted,
+                    ),
+                    // O Badge Vermelho de Alerta "!"
+                    if (_needsWebAudioInteraction)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: AppTheme.red, 
+                            shape: BoxShape.circle
+                          ),
+                          constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                          child: const Text(
+                            '!', 
+                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold), 
+                            textAlign: TextAlign.center
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                tooltip: "Ligar/Desligar Som",
+                onPressed: () {
+                  if (_needsWebAudioInteraction) {
+                    setState(() => _needsWebAudioInteraction = false);
+                    // 🚀 Toca o som para provar ao navegador que o usuário interagiu!
+                    _audioPlayer.play(AssetSource('sounds/alerta.mp3')); 
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("🔊 Sistema de áudio desbloqueado com sucesso!"), 
+                        backgroundColor: AppTheme.green, 
+                        duration: Duration(seconds: 2)
+                      )
+                    );
+                  } else {
+                    _toggleSound();
+                  }
+                },
+              );
+
+              // 🚀 Se precisar interagir (Web), aplica a animação de "chacoalhar"
+              if (_needsWebAudioInteraction) {
+                return btn.animate(onPlay: (controller) => controller.repeat())
+                          .shake(hz: 4, curve: Curves.easeInOut, duration: 600.ms)
+                          .then(delay: 1500.ms); // Dá uma pausa entre os chacoalhões
+              }
+              
+              return btn;
+            },
           ),
-          // BOTÃO DE FILTROS ORIGINAL
+          
+          // BOTÃO DE FILTROS ORIGINAL (Mantenha o seu botão de filtros aqui embaixo)
           IconButton(
             icon: Icon(Icons.tune, color: _filtros.origens.isNotEmpty || _filtros.destinos.isNotEmpty || !_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo ? AppTheme.green : AppTheme.accent),
             tooltip: "Filtros",
