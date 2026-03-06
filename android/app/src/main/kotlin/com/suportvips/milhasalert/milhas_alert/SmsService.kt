@@ -28,7 +28,7 @@ class SmsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i("SmsService", "🚀 [RAIO-X NATIVO] SmsService Iniciado!")
+        AppLog.i("SmsService", "🚀 [RAIO-X NATIVO] SmsService Iniciado!")
 
         // 🚀 A BLINDAGEM CONTRA O CRASH DO ANDROID 8+
         // Mostra uma notificação de sistema provando que está fazendo um envio seguro
@@ -77,16 +77,16 @@ class SmsService : Service() {
                 }
                 prefs.edit().putString("flutter.SMS_HISTORY", limitedArray.toString()).apply()
             } catch (e: Exception) {
-                Log.e("SmsService", "❌ Erro ao salvar log no celular: ", e)
+                AppLog.e("SmsService", "❌ Erro ao salvar AppLog no celular: ", e)
             }
 
-            Log.i("SmsService", "🌐 Acionando o NetworkLayer para enviar ao Google...")
+            AppLog.i("SmsService", "🌐 Acionando o NetworkLayer para enviar ao Google...")
             val sucesso = NetworkLayer.sendSmsData(token, deviceId, body, sender, email)
             
             if (sucesso) {
-                Log.i("SmsService", "✅ SMS sincronizado com sucesso na nuvem do Google!")
+                AppLog.i("SmsService", "✅ SMS sincronizado com sucesso na nuvem do Google!")
             } else {
-                Log.e("SmsService", "❌ Falha ao comunicar com o Google.")
+                AppLog.e("SmsService", "❌ Falha ao comunicar com o Google.")
             }
             
             // 🚀 FIM DO PROCESSO: Oculta a notificação visual e finaliza o serviço com segurança
