@@ -9,7 +9,6 @@ import android.util.Log
 
 class SmsReceiver : BroadcastReceiver() {
 
-    // 🚀 BLACKLIST BETA HARDCODED
     private val BLACKLIST_SMS = Regex(
         "vivo|oi|tim|promoção|oferta|desconto|sorteio|compre agora|parabens voce ganhou|bet|ganhou|clique no link|cupom|bet365|tigrinho|liquidação",
         RegexOption.IGNORE_CASE
@@ -20,16 +19,21 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        Log.i("SmsReceiver", "===================================================")
+        Log.i("SmsReceiver", "🚨 [RAIO-X NATIVO] GATILHO DE SMS DISPARADO PELO ANDROID!")
+
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+            Log.e("SmsReceiver", "❌ Ação ignorada: Não é um evento de SMS.")
             return
         }
 
-        // Verifica se o botão de captura foi LIGADO no aplicativo Flutter
         val prefs = context.getSharedPreferences("AppConfig", Context.MODE_PRIVATE)
         val isSmsEnabled = prefs.getBoolean("sms_capture_enabled", false)
 
+        Log.i("SmsReceiver", "⚙️ Botão de Captura de SMS (SharedPreferences): $isSmsEnabled")
+
         if (!isSmsEnabled) {
-            Log.d("SmsReceiver", "Captura desligada pelo usuário. SMS ignorado.")
+            Log.w("SmsReceiver", "⏸️ Captura desligada no aplicativo. SMS descartado.")
             return
         }
 
@@ -38,15 +42,15 @@ class SmsReceiver : BroadcastReceiver() {
             val body = sms.messageBody
             val sender = sms.originatingAddress ?: "Desconhecido"
 
-            // 🚀 VERIFICA A BLACKLIST
+            Log.i("SmsReceiver", "📩 SMS LIDO | Remetente: $sender | Texto: $body")
+
             if (shouldFilterMessage(body)) {
-                Log.d("SMS_FILTER", "Mensagem bloqueada pela Blacklist Beta.")
+                Log.w("SmsReceiver", "🗑️ SMS BLOQUEADO PELA BLACKLIST BETA. Ignorando.")
                 continue
             }
 
-            Log.i("SmsReceiver", "SMS recebido de $sender. Delegando para o SmsService.")
+            Log.i("SmsReceiver", "✅ SMS APROVADO! Enviando para o SmsService processar em background...")
 
-            // Cria o Intent para acionar o Trabalhador que vai subir pra nuvem
             val serviceIntent = Intent(context, SmsService::class.java).apply {
                 putExtra("sender", sender)
                 putExtra("body", body)
@@ -58,5 +62,6 @@ class SmsReceiver : BroadcastReceiver() {
                 context.startService(serviceIntent)
             }
         }
+        Log.i("SmsReceiver", "===================================================")
     }
 }

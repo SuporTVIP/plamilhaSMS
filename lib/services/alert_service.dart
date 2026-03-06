@@ -117,7 +117,7 @@ Future<void> _checkNewAlerts(String gasUrl) async {
       
       // 🚀 A MARRETA DE DADOS: Ignora a última sincronia e pede SEMPRE os últimos 3 dias!
       // O seu escudo "_knownIds" vai barrar os repetidos em silêncio, deixando só a novidade passar.
-      final String lastSyncStr = DateTime.now().subtract(const Duration(days: 3)).toIso8601String(); 
+     final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String(); 
 
       final uriBase = Uri.parse(gasUrl);
       final uriFinal = uriBase.replace(queryParameters: {
