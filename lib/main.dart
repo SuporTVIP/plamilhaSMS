@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
+import 'widgets/consentimento_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
@@ -878,39 +879,52 @@ class _SmsScreenState extends State<SmsScreen> {
   }
 
 void _toggleMonitoring() async {
-    // 🚀 O NOVO ESCUDO DE PERMISSÕES
     if (!_isMonitoring) {
-      // Se ele está tentando LIGAR o serviço, temos que garantir que o Android deixou.
-      var statusSms = await Permission.sms.status;
-      
-      if (!statusSms.isGranted) {
-        // Se não tem permissão, abre o Pop-up na tela!
-        var resultado = await Permission.sms.request();
-        if (!resultado.isGranted) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("⚠️ Permissão de SMS negada. Não podemos capturar."),
-                backgroundColor: AppTheme.red,
-              )
-            );
+      // 🚀 1. CHAMA O ESCUDO DE CONSENTIMENTO (As 2 camadas jurídicas)
+      ConsentimentoSmsDialog.showIfNeeded(context, () async {
+        
+        // 🚀 2. SÓ ENTRA AQUI SE O USUÁRIO LEU, MARCOU AS CAIXINHAS E ACEITOU!
+        var statusSms = await Permission.sms.status;
+        
+        if (!statusSms.isGranted) {
+          // Pede a permissão real do Android
+          var resultado = await Permission.sms.request();
+          if (!resultado.isGranted) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("⚠️ Permissão de SMS negada. Não podemos capturar."),
+                  backgroundColor: AppTheme.red,
+                )
+              );
+            }
+            return; // Aborta! Não liga o serviço.
           }
-          return; // Aborta! Não liga o serviço.
         }
-      }
-    }
 
-    // Se chegou aqui, ou a permissão foi dada, ou ele está querendo DESLIGAR o serviço.
-    try {
-      final bool result = await platform.invokeMethod(_isMonitoring ? 'stopSmsService' : 'startSmsService');
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('IS_SMS_MONITORING', !_isMonitoring);
-      
-      setState(() {
-        _isMonitoring = !_isMonitoring;
+        // 🚀 3. PERMISSÃO CONCEDIDA: Liga o motor Kotlin
+        try {
+          await platform.invokeMethod('startSmsService');
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('IS_SMS_MONITORING', true);
+          
+          if (mounted) setState(() => _isMonitoring = true);
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+        }
       });
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+
+    } else {
+      // 🚀 SE JÁ ESTAVA LIGADO, O USUÁRIO QUER DESLIGAR (Não precisa de termos)
+      try {
+        await platform.invokeMethod('stopSmsService');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('IS_SMS_MONITORING', false);
+        
+        if (mounted) setState(() => _isMonitoring = false);
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
+      }
     }
   }
 
@@ -1277,11 +1291,11 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 children: [
                   _buildInfoRow("USUÁRIO", _userUsuario, valueColor: Colors.white),
                   const Divider(color: AppTheme.border, height: 30),
-                  _buildInfoRow("LICENÇA", _userToken, valueColor: AppTheme.accent, isMono: true),
+                  _buildInfoRow("LICENÇA", _userToken.toUpperCase(), valueColor: AppTheme.accent, isMono: true),
                   const Divider(color: AppTheme.border, height: 30),
                   _buildInfoRow("VÁLIDA ATÉ", _userVencimento, valueColor: _getCorVencimento(_userVencimento)),
                   const Divider(color: AppTheme.border, height: 30),
-                  _buildInfoRow("E-MAIL VINCULADO", _userEmail),
+                  _buildInfoRow("E-MAIL VINCULADO", _userEmail.toLowerCase(), valueColor: AppTheme.muted, size: 12),
                   const Divider(color: AppTheme.border, height: 30),
                   _buildInfoRow("ID PLANILHA CLIENTE", _userIdPlanilha, isMono: true, size: 10),
                   const Divider(color: AppTheme.border, height: 30),

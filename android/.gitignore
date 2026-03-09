@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Cofre de Assinatura Android
+android/key.properties
+*.jks
