@@ -6,6 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/alert.dart';
 import 'cache_service.dart';
 import 'discovery_service.dart';
+import 'filter_service.dart';
 
 class AlertService {
   static final AlertService _instancia = AlertService._interno();
@@ -162,9 +163,19 @@ Future<void> _checkNewAlerts(String gasUrl) async {
               final existingInCache = _cache.loadAlerts();
               _cache.saveAlerts([...newAlerts, ...existingInCache]);
 
+              // 🚀 1. LIGANDO O CAMINHÃO DE LIXO
+              // Limpa a memória para o app não ficar pesado depois de semanas de uso
+              _limparCacheSeNecessario();
+
+              // 🚀 2. LIGANDO O PORTEIRO DE NOTIFICAÇÕES
               if (_isFirstFetch) {
+                // Se é a primeira vez que abre o app hoje, NÃO APITA! (Só carrega silenciosamente)
                 _isFirstFetch = false;
+              } else {
+                // Se o app já estava aberto/em background e achou coisa nova, APITA!
+                _processarFiltrosENotificar(newAlerts, prefs);
               }
+              
               print("✅ [RAIO-X] Dados enviados para a interface gráfica!");
             }
 
@@ -181,18 +192,14 @@ Future<void> _checkNewAlerts(String gasUrl) async {
     }
   }
 
-  // 🚀 PORTEIRO: Processa os filtros e agrupa as notificações
+ // 🚀 PORTEIRO: Processa os filtros usando o Cérebro Central
   Future<void> _processarFiltrosENotificar(List<Alert> ineditos, SharedPreferences prefs) async {
-    bool querLatam = prefs.getBool('filtro_latam') ?? true;
-    bool querSmiles = prefs.getBool('filtro_smiles') ?? true;
-    bool querAzul = prefs.getBool('filtro_azul') ?? true;
+    await prefs.reload();
+    // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
+    final filtros = await UserFilters.load();
 
     List<Alert> aprovados = ineditos.where((alerta) {
-      final prog = alerta.programa.toUpperCase();
-      if (prog.contains('LATAM')) return querLatam;
-      if (prog.contains('SMILES')) return querSmiles;
-      if (prog.contains('AZUL')) return querAzul;
-      return true; // Outros programas passam por padrão
+      return filtros.alertaPassaNoFiltro(alerta);
     }).toList();
 
     if (aprovados.isNotEmpty) {
@@ -211,19 +218,20 @@ Future<void> _checkNewAlerts(String gasUrl) async {
   }
 
   // 🚀 NOVO: CONFIGURAÇÃO DO SOM E POP-UP NA TELA
+  // 🚀 CONFIGURAÇÃO DO SOM E POP-UP NA TELA
   Future<void> _tocarNotificacaoLocal({required String titulo, required String corpo}) async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'alertas_vip_channel', 
-      'Alertas de Milhas VIP',
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'emissao_vip_v3', // 🚀 CANAL V3: Idêntico ao Background
+      'Emissões FãMilhasVIP',
       channelDescription: 'Avisa sobre novas passagens dentro do seu filtro',
       importance: Importance.max,
       priority: Priority.high,
-      playSound: true, // 🔊 Toca o som padrão do celular
+      sound: const RawResourceAndroidNotificationSound('alerta'), // 🔊 Chama a sua sirene
+      playSound: true, 
     );
 
-    const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
+    final NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
 
-    // 🚀 Adicionamos o rótulo "notificationDetails:"
     await _localNotifications.show(
       id: DateTime.now().millisecond, 
       title: titulo,

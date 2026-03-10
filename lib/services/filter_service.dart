@@ -75,12 +75,10 @@ class UserFilters {
     await prefs.setString(_keyUserFilters, jsonStr);
   }
 
-  /// Verifica se um [Alert] específico atende aos critérios de filtragem do usuário.
-  ///
-  /// Realiza match por companhia aérea e trechos (IATA ou cidade).
-  bool alertaPassaNoFiltro(Alert alerta) {
-    final String programaUpper = alerta.programa.toUpperCase();
-    final String trechoUpper = alerta.trecho.toUpperCase();
+  /// Verifica se um programa e trecho específicos passam no filtro.
+  bool passaNoFiltroBasico(String programa, String trecho) {
+    final String programaUpper = programa.toUpperCase();
+    final String trechoUpper = trecho.toUpperCase();
     
     // Filtro por Companhia Aérea
     if (programaUpper.contains("LATAM") && !latamAtivo) return false;
@@ -92,6 +90,12 @@ class UserFilters {
     if (!_testaMatch(destinos, trechoUpper)) return false;
 
     return true;
+  }
+
+  /// Verifica se um [Alert] completo atende aos critérios.
+  bool alertaPassaNoFiltro(Alert alerta) {
+    // 🚀 Agora ele reaproveita a lógica central!
+    return passaNoFiltroBasico(alerta.programa, alerta.trecho);
   }
 
   /// Verifica se o texto do trecho contém algum dos locais filtrados (IATA ou Nome).

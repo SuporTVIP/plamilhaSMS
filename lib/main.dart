@@ -21,72 +21,147 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
 import 'widgets/consentimento_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'services/discovery_service.dart';
+import 'package:http/http.dart' as http;
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-// 🚀 O MOTOR INVISÍVEL (Roda com o app fechado)
+// 🚀 O MOTOR INVISÍVEL (Workmanager)
 @pragma('vm:entry-point')
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
-    print("🤖 [BACKGROUND] O celular acordou o aplicativo em segundo plano! Tarefa: $task");
-    
-    // Na próxima etapa, colocaremos a chamada da sua Planilha aqui dentro!
-    
+    print("🤖 [BACKGROUND] Workmanager acordou! Tarefa: $task");
+
+    try {
+      await Firebase.initializeApp();
+
+      // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      final filtros = await UserFilters.load();
+
+      final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String();
+      final String? discoveryCache = prefs.getString('DISCOVERY_CACHE_V2');
+      String? gasUrl;
+
+      if (discoveryCache != null && discoveryCache.isNotEmpty) {
+        try {
+          final Map<String, dynamic> configJson = jsonDecode(discoveryCache);
+          gasUrl = configJson['gas_url'];
+        } catch (_) {}
+      }
+
+      if (gasUrl == null || gasUrl.isEmpty) return Future.value(true);
+
+      final uri = Uri.parse(gasUrl).replace(queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
+      final response = await http.get(uri).timeout(const Duration(seconds: 25));
+
+      if (response.statusCode != 200) return Future.value(true);
+      final body = jsonDecode(response.body);
+      if (body['status'] != 'success') return Future.value(true);
+
+      final List<dynamic> rawData = body['data'] ?? [];
+      final List<String> knownIds = List<String>.from(jsonDecode(prefs.getString('WM_KNOWN_IDS') ?? '[]'));
+      final hoje = DateTime.now();
+      final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
+
+      final novasAprovadas = rawData.where((j) {
+        try {
+          final String id = j['id']?.toString() ?? '';
+          final DateTime data = DateTime.parse(j['data'] ?? '');
+          final String prog = (j['programa'] ?? '').toString();
+          final String trecho = (j['trecho'] ?? '').toString();
+
+          if (knownIds.contains(id)) return false;
+          if (!data.isAfter(inicioDoDia)) return false;
+
+          // 🚀 A MÁGICA ACONTECE AQUI: Deixa o Cérebro Central decidir
+          return filtros.passaNoFiltroBasico(prog, trecho);
+        } catch (_) {
+          return false;
+        }
+      }).toList();
+
+      if (novasAprovadas.isEmpty) return Future.value(true);
+
+      final novosIds = novasAprovadas.map((j) => j['id'].toString()).toList();
+      final idsAtualizados = [...knownIds, ...novosIds];
+      final idsParaSalvar = idsAtualizados.length > 500 ? idsAtualizados.sublist(idsAtualizados.length - 500) : idsAtualizados;
+      await prefs.setString('WM_KNOWN_IDS', jsonEncode(idsParaSalvar));
+
+      final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
+      await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
+
+      final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'emissao_vip_v3', 'Emissões FãMilhasVIP',
+          importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
+        ),
+      );
+
+      final String titulo = novasAprovadas.length == 1 ? "✈️ Oportunidade: ${novasAprovadas.first['programa']}" : "🚨 Radar VIP Atualizado";
+      final String corpo = novasAprovadas.length == 1 ? novasAprovadas.first['trecho']?.toString() ?? 'Nova passagem encontrada!' : "Encontramos ${novasAprovadas.length} novas passagens nos seus filtros!";
+
+      await localNotif.show(
+        id: DateTime.now().millisecond, title: titulo, body: corpo,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
+        ),
+      );
+
+    } catch (e) {
+      print("❌ [WM] Erro fatal no background: $e");
+    }
     return Future.value(true);
   });
 }
 
-// 🚀 Handler de mensagens em segundo plano
-// 🚀 O NOVO PORTEIRO NINJA (Substitua a sua função antiga por esta)
+// 🚀 Handler de mensagens do Firebase (Push Oculto)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+
+  debugPrint("🚨 [FCM] ACORDOU O BACKGROUND! Dados: ${message.data}");
   await Firebase.initializeApp();
   print("📩 Push Oculto Recebido (Tela Apagada): ${message.data}");
 
-  // Confere se é uma mensagem do robô
   if (message.data['action'] == 'SYNC_ALERTS' || message.data['tipo'] == 'NOVO_ALERTA') {
-
+    // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
     final prefs = await SharedPreferences.getInstance();
-    bool querLatam = prefs.getBool('filtro_latam') ?? true;
-    bool querSmiles = prefs.getBool('filtro_smiles') ?? true;
-    bool querAzul = prefs.getBool('filtro_azul') ?? true;
+    await prefs.reload();
+    final filtros = await UserFilters.load();
 
-    String programa = (message.data['programa'] ?? 'Geral').toUpperCase();
-    String trecho = message.data['trecho'] ?? 'Nova Passagem Encontrada!';
+    String programa = (message.data['programa'] ?? 'Geral');
+    String trecho = (message.data['trecho'] ?? 'Nova Passagem Encontrada!');
 
-    // Aplica os filtros com o app fechado
-    bool passou = false;
-    if (programa.contains('LATAM') && querLatam) passou = true;
-    else if (programa.contains('SMILES') && querSmiles) passou = true;
-    else if (programa.contains('AZUL') && querAzul) passou = true;
-    else if (!programa.contains('LATAM') && !programa.contains('SMILES') && !programa.contains('AZUL')) passou = true;
+    // 🚀 A MÁGICA ACONTECE AQUI TAMBÉM
+    if (filtros.passaNoFiltroBasico(programa, trecho)) {
+      print("✅ Filtro Aprovado no Background! Preparando notificação...");
+      try {
+        final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
+        await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
 
-    if (passou) {
-      print("✅ Filtro Aprovado no Background! Acordando o celular...");
-      final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
+        final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        await androidPlugin?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'emissao_vip_v3', 'Emissões FãMilhasVIP',
+            importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
+          ),
+        );
 
-      // 🚀 ATENÇÃO: Usando exatamente o mesmo canal "emissao_vip_v2" e som que você configurou
-      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'emissao_vip_v2',
-        'Emissões FãMilhas',
-        channelDescription: 'Avisos de novas passagens',
-        importance: Importance.max,
-        priority: Priority.high,
-        sound: RawResourceAndroidNotificationSound('alerta'), // 🔊 Chama o arquivo alerta.mp3
-        playSound: true,
-      );
-
-      const NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
-
-      await localNotif.show(
-        id: DateTime.now().millisecond,
-        title: "✈️ Oportunidade: $programa",
-        body: trecho,
-        notificationDetails: platformDetails,
-      );
+        await localNotif.show(
+          id: DateTime.now().millisecond, title: "✈️ Oportunidade: $programa", body: trecho,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
+          ),
+        );
+      } catch (e) {
+        print("❌ [BACKGROUND] Falha ao disparar notificação: $e");
+      }
     } else {
-      print("🤫 Push bloqueado no background pelo filtro do usuário.");
+      print("⛔ [BACKGROUND] BLOQUEADO pelo Cérebro Central (Destino ou Companhia não bate).");
     }
   }
 }
@@ -335,6 +410,9 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
+    
     _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
   }
@@ -424,16 +502,16 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   /// Gera uma notificação nativa no sistema operacional com SOM CUSTOMIZADO.
   Future<void> _mostrarNotificacao(Alert alerta) async {
     // Não é const porque dependemos de _isSoundEnabled em tempo de execução
+    // Tire o 'const' e use 'final'
     final AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'emissao_vip_v2', // 🚀 MUDAMOS O ID PARA V2 (Força o Android a recriar o canal com o som novo)
-      'Emissões FãMilhas',
+      'emissao_vip_v3', // 🚀 CANAL V3 AQUI TAMBÉM
+      'Emissões FãMilhas VIP',
       channelDescription: 'Avisos de novas passagens',
       importance: Importance.max,
       priority: Priority.high,
-      icon: '@mipmap/launcher_icon', // 🚀 GARANTE QUE O ÍCONE APAREÇA MESMO EM BACKGROUND
-      // 🚀 A MÁGICA ACONTECE AQUI: Aponta para a pasta res/raw nativa do Android
-      sound: const RawResourceAndroidNotificationSound('alerta'), 
-      playSound: _isSoundEnabled, // 🚀 OBEDECE AO BOTÃO AQUI TAMBÉM
+      icon: '@mipmap/launcher_icon', 
+      sound: const RawResourceAndroidNotificationSound('alerta'), // Aqui o const fica só no som
+      playSound: _isSoundEnabled, // A sua variável dinâmica brilha aqui!
     );
     
     final NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
@@ -493,6 +571,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     // Scaffold: A estrutura básica de layout da página (como o <body> no HTML).
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         // 🚀 O title agora é uma Column para caber o subtítulo de sincronia
         title: Column(
           mainAxisSize: MainAxisSize.min,
@@ -519,7 +598,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           )
           ],
         ),
-        centerTitle: true,
 actions: [
           // 🚀 NOVO BOTÃO DE VOLUME ANIMADO (FURA-BLOQUEIO WEB)
           Builder(
@@ -636,6 +714,7 @@ class AlertCard extends StatefulWidget {
 
 class _AlertCardState extends State<AlertCard> {
   bool _isExpanded = false;
+  // String linkGrupoWpp = "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
 
   /// Tenta abrir o link de emissão no navegador externo.
   void _abrirLink() async {
@@ -645,6 +724,46 @@ class _AlertCardState extends State<AlertCard> {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
       if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link.")));
+    }
+  }
+
+ void _abrirWpp() async {
+    print("🟢 [WPP] CLICOU NO BOTÃO DO WHATSAPP!");
+    try {
+      // 1. Busca a configuração
+      final config = await DiscoveryService().getConfig();
+      final String? urlGist = config?.whatsappGroupUrl;
+
+      // 2. Define o link final
+      final String urlFinal = (urlGist != null && urlGist.isNotEmpty) 
+          ? urlGist 
+          : "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
+
+      print("🔗 [WPP] URL DEFINIDA: $urlFinal");
+
+      final Uri uri = Uri.parse(urlFinal);
+      
+      print("🚀 [WPP] TENTANDO ABRIR O LINK...");
+      
+      // 3. Vai direto pro abraço (sem o canLaunchUrl que às vezes buga)
+      await launchUrl(
+        uri, 
+        // Na web, platformDefault é melhor. No celular, externalApplication força abrir o app do WhatsApp.
+        mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
+      );
+      
+      print("✅ [WPP] LINK ABERTO COM SUCESSO!");
+
+    } catch (e) {
+      print("❌ [WPP] ERRO FATAL AO ABRIR WPP: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Erro ao abrir WhatsApp: $e"),
+            backgroundColor: AppTheme.red,
+          )
+        );
+      }
     }
   }
 
@@ -747,15 +866,15 @@ class _AlertCardState extends State<AlertCard> {
                       children: [
                         _buildInfoColumn("IDA", widget.alerta.dataIda),
                         _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
-                        _buildInfoColumn("CUSTO (Milhas)", widget.alerta.valorFabricado),
+                        _buildInfoColumn("CUSTO (Fabricado)", widget.alerta.valorFabricado),//deixar azul
                         // 🚀 TROCAMOS O NOME E A VARIÁVEL
                         _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true), 
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 16), // Espaçamento entre o grid e a descrição
 
                   Container(
-                      height: 90, // Altura fixa e compacta
+                      height: 175, // Altura fixa e compacta
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
@@ -778,10 +897,13 @@ class _AlertCardState extends State<AlertCard> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                   const SizedBox(height: 16),
 
-                    if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
-                      SizedBox(
+                  // Botão 1: EMITIR AGORA
+                  if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8), // Pequeno espaço entre os botões
+                      child: SizedBox(
                         width: double.infinity,
                         height: 45,
                         child: ElevatedButton.icon(
@@ -794,7 +916,28 @@ class _AlertCardState extends State<AlertCard> {
                           label: const Text("EMITIR AGORA", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                           onPressed: _abrirLink,
                         ),
-                      )
+                      ),
+                    ),
+                  
+                  // Botão 2: CONFERIR GRUPO (Novo)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 45,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF25D366),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        // Substituindo o Icon por Image.network
+                        icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
+                        label: const Text("CONFERIR NO GRUPO", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        onPressed: () {
+                        print("👉 O BOTÃO FOI APERTADO NA TELA!");
+                        _abrirWpp();
+                      },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -934,13 +1077,14 @@ void _toggleMonitoring() async {
     if (kIsWeb) {
       return Scaffold(
         appBar: AppBar(
+          centerTitle: true,
           title: const Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.sms, color: AppTheme.accent, size: 22),
               SizedBox(width: 8),
-              Text("SMS", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
-              Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+              Text("SMS", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white, letterSpacing: 2, fontSize: 20)),
+              Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 20)),
             ],
           ),
         ),
@@ -969,6 +1113,7 @@ void _toggleMonitoring() async {
     // 👇 SE CHEGOU AQUI, É PORQUE ESTÁ NO CELULAR ANDROID (Mostra a tela normal) 👇
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1198,15 +1343,16 @@ class _LicenseScreenState extends State<LicenseScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.badge, color: AppTheme.accent, size: 22),
             SizedBox(width: 8),
-            Text("SESSÃO ", style: TextStyle(fontWeight: FontWeight.w300, color: Colors.white, letterSpacing: 2, fontSize: 16)),
-            Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 16)),
+            Text("SESSÃO", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white, letterSpacing: 2, fontSize: 20)),
+            Text("VIP", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.accent, letterSpacing: 2, fontSize: 20)),
           ],
-        ),
+        ),//centralizar o título
         actions: [
           IconButton(icon: const Icon(Icons.refresh, color: AppTheme.muted), onPressed: _inicializarSistema)
         ],

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 class AppLogger {
   // 🚀 A CHAVE MESTRA: Mude para 'false' para silenciar o app todo no terminal
-  static const bool isDebug = false;
+  static const bool isDebug = true;
 
   static void log(String message) {
     if (isDebug && kDebugMode) {

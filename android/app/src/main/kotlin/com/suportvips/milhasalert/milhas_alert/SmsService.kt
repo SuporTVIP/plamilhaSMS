@@ -15,12 +15,13 @@ class SmsService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        // Cria o canal de notificação obrigatório no Android 8+
+        Log.i("SmsService", "⚙️ onCreate: Inicializando serviço de SMS...")
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Sincronização Invisível",
-                NotificationManager.IMPORTANCE_MIN // IMPORTANCE_MIN = Sem som, sem vibrar
+                NotificationManager.IMPORTANCE_MIN // Sem som, sem vibrar
             )
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
@@ -28,23 +29,37 @@ class SmsService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        AppLog.i("SmsService", "🚀 [RAIO-X NATIVO] SmsService Iniciado!")
+        Log.i("SmsService", "🚀 [RAIO-X NATIVO] SmsService onStartCommand acionado!")
 
-        // 🚀 A BLINDAGEM CONTRA O CRASH DO ANDROID 8+
-        // Mostra uma notificação de sistema provando que está fazendo um envio seguro
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notification = android.app.Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Sincronizando SMS")
-                .setContentText("Transmitindo alerta para a nuvem...")
-                .setSmallIcon(android.R.drawable.stat_sys_upload) // Ícone de upload do próprio Android
+                .setContentTitle("Sincronizando SMS VIP")
+                .setContentText("Transmitindo para a nuvem...")
+                .setSmallIcon(android.R.drawable.stat_sys_upload) 
                 .build()
             
-            // Avisa o Android: "Calma, não me mate, eu estou na barra de notificações!"
             startForeground(1001, notification)
         }
 
-        val sender = intent?.getStringExtra("sender") ?: return START_NOT_STICKY
-        val body = intent.getStringExtra("body") ?: return START_NOT_STICKY
+        // Se a intent for nula (o Android reiniciou o serviço sozinho), a gente morre.
+        if (intent == null) {
+            Log.e("SmsService", "❌ Intent Nula! Serviço abortado.")
+            stopForeground(true)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        val sender = intent.getStringExtra("sender")
+        val body = intent.getStringExtra("body")
+
+        if (sender == null || body == null) {
+             Log.e("SmsService", "❌ Faltou remetente ou body! Sender: $sender | Body: $body")
+             stopForeground(true)
+             stopSelf(startId)
+             return START_NOT_STICKY
+        }
+
+        Log.i("SmsService", "📦 Pacote recebido com sucesso: $sender -> $body")
 
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val token = prefs.getString("flutter.USER_TOKEN", "") ?: ""
@@ -52,19 +67,22 @@ class SmsService : Service() {
         val email = prefs.getString("flutter.USER_EMAIL", "") ?: ""
 
         if (token.isEmpty() || email.isEmpty()) {
-            stopForeground(true) // Remove a notificação
+            Log.e("SmsService", "❌ Usuário não está logado (Falta Token/Email). Abortando...")
+            stopForeground(true) 
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
         Thread {
             try {
+                // Salva no histórico local (para aparecer na tela do App)
                 val historyStr = prefs.getString("flutter.SMS_HISTORY", "[]") ?: "[]"
                 val historyArray = org.json.JSONArray(historyStr)
                 
                 val newSms = org.json.JSONObject()
                 newSms.put("remetente", sender)
                 newSms.put("mensagem", body)
+                
                 val sdf = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault())
                 newSms.put("hora", sdf.format(java.util.Date()))
                 
@@ -76,20 +94,27 @@ class SmsService : Service() {
                     limitedArray.put(historyArray.get(i))
                 }
                 prefs.edit().putString("flutter.SMS_HISTORY", limitedArray.toString()).apply()
+                Log.i("SmsService", "💾 SMS salvo no histórico local com sucesso.")
             } catch (e: Exception) {
-                AppLog.e("SmsService", "❌ Erro ao salvar AppLog no celular: ", e)
+                Log.e("SmsService", "❌ Erro ao salvar histórico no celular: ", e)
             }
 
-            AppLog.i("SmsService", "🌐 Acionando o NetworkLayer para enviar ao Google...")
-            val sucesso = NetworkLayer.sendSmsData(token, deviceId, body, sender, email)
+            Log.i("SmsService", "🌐 Acionando o NetworkLayer para enviar ao Google...")
             
-            if (sucesso) {
-                AppLog.i("SmsService", "✅ SMS sincronizado com sucesso na nuvem do Google!")
-            } else {
-                AppLog.e("SmsService", "❌ Falha ao comunicar com o Google.")
+            // Tenta enviar. 
+            // NOTA: Se o seu AppLog e o NetworkLayer existirem e estiverem corretos, isso vai brilhar!
+            try {
+               val sucesso = NetworkLayer.sendSmsData(token, deviceId, body, sender, email)
+               if (sucesso) {
+                   Log.i("SmsService", "✅ SMS sincronizado com sucesso na nuvem do Google!")
+               } else {
+                   Log.e("SmsService", "❌ Falha ao comunicar com o Google (Retornou false).")
+               }
+            } catch (e: Exception) {
+               Log.e("SmsService", "❌ CRASH FATAL no NetworkLayer: ", e)
             }
             
-            // 🚀 FIM DO PROCESSO: Oculta a notificação visual e finaliza o serviço com segurança
+            Log.i("SmsService", "🏁 Encerrando o SmsService com sucesso.")
             stopForeground(true) 
             stopSelf(startId) 
         }.start()

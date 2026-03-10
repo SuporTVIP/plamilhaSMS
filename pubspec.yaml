@@ -48,6 +48,7 @@ dependencies:
   hive: ^2.2.3 # Banco de dados local leve e rápido (Analogia: IndexedDB ou SQLite)
   hive_flutter: ^1.1.0 # Extensão para integração do Hive com Flutter
   permission_handler: ^12.0.1
+  font_awesome_flutter: ^11.0.0
 
 
 dev_dependencies:
