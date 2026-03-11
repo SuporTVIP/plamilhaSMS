@@ -13,7 +13,6 @@ class AlertService {
   factory AlertService() => _instancia;
   AlertService._interno();
 
-  // 🚀 Variável de Controle: Silencia o apito na primeira carga (abertura)
   bool _isFirstFetch = true;
 
   static const String _keyLastSync = "LAST_ALERT_SYNC_V2";
@@ -31,6 +30,11 @@ class AlertService {
 
   final Set<String> _knownIds = {};
   final StreamController<List<Alert>> _alertController = StreamController<List<Alert>>.broadcast();
+  
+  // 🚀 O NOVO RASTREADOR DE CLIQUES EM NOTIFICAÇÕES
+  final StreamController<String> _tapController = StreamController<String>.broadcast();
+  Stream<String> get tapStream => _tapController.stream;
+  void registrarToqueNotificacao(String payload) => _tapController.add(payload);
 
   Stream<List<Alert>> get alertStream => _alertController.stream;
 
@@ -58,19 +62,15 @@ class AlertService {
 
     final cachedAlerts = _cache.loadAlerts();
     if (cachedAlerts.isNotEmpty) {
-      // 🚀 FILTRO DIÁRIO (CACHE): Só carrega o que for de hoje (00:00 até agora)
       final hoje = DateTime.now();
       final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
-
       final alertasDeHoje = cachedAlerts.where((a) => a.data.isAfter(inicioDoDia)).toList();
 
       if(alertasDeHoje.isNotEmpty) {
-        print("📂 Carregando ${alertasDeHoje.length} alertas de HOJE do cache.");
         _knownIds.addAll(alertasDeHoje.map((a) => a.id));
         _alertController.add(alertasDeHoje);
       }
     }
-
     _isPolling = true;
     _scheduleNextPoll();
   }
@@ -78,55 +78,38 @@ class AlertService {
   void stopMonitoring() {
     _timer?.cancel();
     _isPolling = false;
-    print("🛑 Motor de Polling Parado");
   }
 
-  Future<void> forceSync() async {
-    print("🔔 Sincronização forçada iniciada...");
+  // 🚀 AGORA ELE ACEITA O COMANDO "SILENCIOSO" PARA NÃO DAR DUPLO APITO
+  Future<void> forceSync({bool silencioso = false}) async {
+    print("🔔 Sincronização forçada iniciada (Silencioso: $silencioso)...");
     final config = await _discovery.getConfig();
     if (config != null && config.gasUrl.isNotEmpty) {
-      await _checkNewAlerts(config.gasUrl);
-    } else {
-      print("⚠️ Falha ao forçar sync: URL não encontrada.");
+      await _checkNewAlerts(config.gasUrl, silencioso: silencioso);
     }
   }
 
   Future<void> _scheduleNextPoll() async {
     if (!_isPolling) return;
-
     final config = await _discovery.getConfig();
     if (config == null || !config.isActive) {
-      print("⏸️ Sistema em manutenção. Nova tentativa em 60s.");
       _timer = Timer(const Duration(seconds: 60), _scheduleNextPoll);
       return;
     }
-
-    final int intervalo = config.currentPollingInterval;
-
-    await _checkNewAlerts(config.gasUrl);
-
-    print("⏳ Próxima checagem em $intervalo segundos.");
-    _timer = Timer(Duration(seconds: intervalo), _scheduleNextPoll);
+    await _checkNewAlerts(config.gasUrl, silencioso: false);
+    _timer = Timer(Duration(seconds: config.currentPollingInterval), _scheduleNextPoll);
   }
 
-Future<void> _checkNewAlerts(String gasUrl) async {
+  Future<void> _checkNewAlerts(String gasUrl, {bool silencioso = false}) async {
     if (_isFetching) return;
     _isFetching = true;
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      
-      // 🚀 A MARRETA DE DADOS: Ignora a última sincronia e pede SEMPRE os últimos 3 dias!
-      // O seu escudo "_knownIds" vai barrar os repetidos em silêncio, deixando só a novidade passar.
-     final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String(); 
+      final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String(); 
 
       final uriBase = Uri.parse(gasUrl);
-      final uriFinal = uriBase.replace(queryParameters: {
-        'action': 'SYNC_ALERTS',
-        'since': lastSyncStr,
-      });
-
-      print("🔍 [RAIO-X] Buscando dados a partir de: $lastSyncStr");
+      final uriFinal = uriBase.replace(queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
 
       final response = await http.get(uriFinal).timeout(const Duration(seconds: 30));
 
@@ -135,113 +118,86 @@ Future<void> _checkNewAlerts(String gasUrl) async {
 
         if (body['status'] == 'success') {
           final List<dynamic> rawData = body['data'];
-          print("📥 [RAIO-X] O Servidor (GAS) retornou ${rawData.length} passagens brutas.");
 
           if (rawData.isNotEmpty) {
             final List<Alert> alertsFromServer = rawData.map((j) => Alert.fromJson(j)).toList();
-
             final hoje = DateTime.now();
             final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
 
             final List<Alert> newAlerts = alertsFromServer.where((a) {
               bool isNew = !_knownIds.contains(a.id);
               bool isToday = a.data.isAfter(inicioDoDia);
-              
-              if (!isToday) print("❌ [RAIO-X] Descartado (Data Antiga): ${a.trecho} - Data da Passagem: ${a.data}");
-              if (!isNew) print("❌ [RAIO-X] Descartado (Duplicado): ${a.trecho}");
-              
               return isNew && isToday;
             }).toList();
 
-            print("🚦 [RAIO-X] Passaram pelos filtros de tempo/duplicação: ${newAlerts.length} inéditas.");
-
             if (newAlerts.isNotEmpty) {
               _knownIds.addAll(newAlerts.map((a) => a.id));
-              _alertController.add(newAlerts); // 🚀 Envia para a tela!
+              _alertController.add(newAlerts); 
               _lastSyncTime = DateTime.now();
 
               final existingInCache = _cache.loadAlerts();
               _cache.saveAlerts([...newAlerts, ...existingInCache]);
-
-              // 🚀 1. LIGANDO O CAMINHÃO DE LIXO
-              // Limpa a memória para o app não ficar pesado depois de semanas de uso
               _limparCacheSeNecessario();
 
-              // 🚀 2. LIGANDO O PORTEIRO DE NOTIFICAÇÕES
-              if (_isFirstFetch) {
-                // Se é a primeira vez que abre o app hoje, NÃO APITA! (Só carrega silenciosamente)
+              // 🚀 SE O APP ACABOU DE ABRIR (SILENCIOSO), ELE ATUALIZA O FEED MAS NÃO APITA!
+              if (_isFirstFetch || silencioso) {
                 _isFirstFetch = false;
               } else {
-                // Se o app já estava aberto/em background e achou coisa nova, APITA!
                 _processarFiltrosENotificar(newAlerts, prefs);
               }
-              
-              print("✅ [RAIO-X] Dados enviados para a interface gráfica!");
             }
-
-            if (body['serverTime'] != null) {
-              await prefs.setString(_keyLastSync, body['serverTime']);
-            }
+            if (body['serverTime'] != null) await prefs.setString(_keyLastSync, body['serverTime']);
           }
         }
       }
     } catch (e) {
-      print("⚠️ [RAIO-X] Erro na sincronização: $e");
+      print("⚠️ Erro na sincronização: $e");
     } finally {
       _isFetching = false;
     }
   }
 
- // 🚀 PORTEIRO: Processa os filtros usando o Cérebro Central
   Future<void> _processarFiltrosENotificar(List<Alert> ineditos, SharedPreferences prefs) async {
     await prefs.reload();
     final filtros = await UserFilters.load();
 
-    List<Alert> aprovados = ineditos.where((alerta) {
-      bool passa = filtros.alertaPassaNoFiltro(alerta);
-      if (!passa) {
-        print("⛔ [PORTEIRO] Cérebro Central barrou esta passagem: ${alerta.trecho}");
-      }
-      return passa;
-    }).toList();
+    List<Alert> aprovados = ineditos.where((alerta) => filtros.alertaPassaNoFiltro(alerta)).toList();
 
     if (aprovados.isNotEmpty) {
-      print("✅ [PORTEIRO] ${aprovados.length} alertas aprovados! Disparando Sirene/Push...");
       if (aprovados.length == 1) {
         _tocarNotificacaoLocal(
           titulo: "✈️ Oportunidade: ${aprovados.first.programa}",
           corpo: aprovados.first.trecho,
+          payload: aprovados.first.trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
         );
       } else {
         _tocarNotificacaoLocal(
           titulo: "🚨 Radar VIP Atualizado",
           corpo: "Encontramos ${aprovados.length} novas passagens dentro dos seus filtros!",
+          payload: "MULTIPLOS",
         );
       }
-    } else {
-      print("⚠️ [PORTEIRO] Novidades chegaram, mas NENHUMA passou no seu filtro Avançado de Origens/Destinos.");
     }
   }
 
-  // 🚀 CONFIGURAÇÃO DO SOM E POP-UP NA TELA
-  Future<void> _tocarNotificacaoLocal({required String titulo, required String corpo}) async {
+  Future<void> _tocarNotificacaoLocal({required String titulo, required String corpo, String? payload}) async {
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'emissao_vip_v3', // 🚀 CANAL V3: Idêntico ao Background
+      'emissao_vip_v3', 
       'Emissões FãMilhasVIP',
-      channelDescription: 'Avisa sobre novas passagens dentro do seu filtro',
       importance: Importance.max,
       priority: Priority.high,
-      sound: const RawResourceAndroidNotificationSound('alerta'), // 🔊 Chama a sua sirene
+      sound: const RawResourceAndroidNotificationSound('alerta'), 
       playSound: true, 
     );
 
     final NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
 
     await _localNotifications.show(
-      id: DateTime.now().millisecond, 
-      title: titulo,
-      body: corpo,
-      notificationDetails: platformDetails,
+     id: DateTime.now().millisecond, // 🚀 Colocamos a etiqueta 'id:'
+      title: titulo,                  // 🚀 Etiqueta 'title:'
+      body: corpo,                    // 🚀 Etiqueta 'body:'
+      notificationDetails: platformDetails, // 🚀 Etiqueta 'notificationDetails:'
+      payload: payload, // Esse aqui já estava com etiqueta!
     );
   }
 

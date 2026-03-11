@@ -18,7 +18,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
+//import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
 import 'widgets/consentimento_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -152,10 +152,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         );
 
         await localNotif.show(
-          id: DateTime.now().millisecond, title: "✈️ Oportunidade: $programa", body: trecho,
+          id: DateTime.now().millisecond,
+          title: "✈️ Oportunidade: $programa",
+          body: trecho,
           notificationDetails: const NotificationDetails(
             android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
           ),
+          payload: trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
         );
       } catch (e) {
         print("❌ [BACKGROUND] Falha ao disparar notificação: $e");
@@ -192,7 +195,6 @@ void main() async {
     await Firebase.initializeApp();
   }
 
-  // 🚀 COMENTADO TEMPORARIAMENTE: Como o Firebase no Android tá desligado, isso aqui daria erro
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
@@ -207,12 +209,16 @@ void main() async {
 
   // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
   const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
-  const InitializationSettings initializationSettings = InitializationSettings(
-    android: initializationSettingsAndroid,
-  );
-  // v20+ uses named parameters for initialize
+  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+  
   await flutterLocalNotificationsPlugin.initialize(
     settings: initializationSettings,
+    onDidReceiveNotificationResponse: (NotificationResponse response) {
+      if (response.payload != null && response.payload!.isNotEmpty) {
+        // 🚀 O usuário clicou! Avisa o serviço para acender o Dourado!
+        AlertService().registrarToqueNotificacao(response.payload!);
+      }
+    },
   );
 
   // 🚀 BLINDAGEM MULTIPLATAFORMA: Só liga o motor de fundo se NÃO for Web
@@ -638,6 +644,8 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   bool _isSoundEnabled = true; 
   bool _needsWebAudioInteraction = kIsWeb; // 🚀 Web precisa de interação para ativar o áudio
 
+  // 🚀 NOVO: VARIÁVEL QUE GUARDA QUAL PASSAGEM DEVE PISCAR EM DOURADO
+  String? _highlightedTrecho;
 
   @override
   void initState() {
@@ -647,6 +655,31 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     
     _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
+    _verificarNotificacaoDeAbertura(); // 🚀 NOVO: Checa se o app abriu por um clique
+  }
+
+  // 🚀 NOVO: OUVINTE DE CLIQUES (BACKGROUND E FOREGROUND)
+  void _verificarNotificacaoDeAbertura() async {
+    // 1. Caso o app estava fechado e abriu pelo clique
+    final details = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
+    if (details != null && details.didNotificationLaunchApp && details.notificationResponse?.payload != null) {
+       _ativarBlurDourado(details.notificationResponse!.payload!);
+    }
+
+    // 2. Caso o app já estava aberto (minimizou) e o usuário clicou
+    _alertService.tapStream.listen((trechoClicado) {
+       _ativarBlurDourado(trechoClicado);
+    });
+  }
+
+  // 🚀 NOVO: ATIVA O DOURADO E DESLIGA DEPOIS DE 6 SEGUNDOS
+  void _ativarBlurDourado(String trecho) {
+    if (mounted) {
+      setState(() => _highlightedTrecho = trecho);
+      Future.delayed(const Duration(seconds: 6), () {
+        if (mounted) setState(() => _highlightedTrecho = null);
+      });
+    }
   }
 
   void _carregarFiltros() async {
@@ -753,6 +786,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
       title: '✈️ ${alerta.programa} - Nova Oportunidade!',
       body: alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem,
       notificationDetails: platformChannelSpecifics,
+      payload: alerta.trecho, // 🚀 NOVO: CARREGA O RASTREADOR
     );
   }
 
@@ -790,14 +824,15 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   }
 
   // 🚀 O GATILHO DE RETORNO (LIFECYCLE)
-@override
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print("📱 App voltou para o primeiro plano! Sincronizando...");
-      // 🚀 AGORA SIM! Usando a variável correta (com underline)
-      _alertService.forceSync(); 
+      print("📱 App voltou para o primeiro plano! Sincronizando Silenciosamente...");
+      // 🚀 FORÇA A ATUALIZAÇÃO DO FEED, MAS SEM TOCAR A SIRENE DE NOVO!
+      _alertService.forceSync(silencioso: true); // Correção de sintaxe para _alertService
     }
   }
+
   @override
   Widget build(BuildContext context) {
     // Scaffold: A estrutura básica de layout da página (como o <body> no HTML).
@@ -830,7 +865,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           )
           ],
         ),
-actions: [
+        actions: [
           // 🚀 NOVO BOTÃO DE VOLUME ANIMADO (FURA-BLOQUEIO WEB)
           Builder(
             builder: (context) {
@@ -925,7 +960,11 @@ actions: [
                   // O itemBuilder é chamado apenas para os itens que aparecem na tela.
                   itemBuilder: (context, index) {
                     final alerta = _listaAlertasFiltrados[index];
-                    return AlertCard(alerta: alerta);
+                    return AlertCard(
+                      alerta: alerta,
+                      // 🚀 NOVO: AVISA O CARD SE ELE FOI O CLICADO
+                      isHighlighted: _highlightedTrecho != null && alerta.trecho.contains(_highlightedTrecho!),
+                    );
                   },
                 ),
     );
@@ -938,7 +977,9 @@ actions: [
 /// Exibe as informações de um único alerta em um card expansível.
 class AlertCard extends StatefulWidget {
   final Alert alerta;
-  const AlertCard({super.key, required this.alerta});
+  final bool isHighlighted; // 🚀 NOVO: Recebe a informação se deve piscar
+  
+  const AlertCard({super.key, required this.alerta, this.isHighlighted = false}); // 🚀 NOVO: Construtor atualizado
 
   @override
   State<AlertCard> createState() => _AlertCardState();
@@ -946,7 +987,6 @@ class AlertCard extends StatefulWidget {
 
 class _AlertCardState extends State<AlertCard> {
   bool _isExpanded = false;
-  // String linkGrupoWpp = "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
 
   /// Tenta abrir o link de emissão no navegador externo.
   void _abrirLink() async {
@@ -959,14 +999,39 @@ class _AlertCardState extends State<AlertCard> {
     }
   }
 
- void _abrirWpp() async {
-    print("🟢 [WPP] CLICOU NO BOTÃO DO WHATSAPP!");
+void _abrirBalcao() async {
+    print("🟢 [BALCÃO] Copiando mensagem...");
+    
+    // 🚀 1. O MOTOR DE CÓPIA (PUXA DIRETO DO SEU MODELO NOVO)
+    String mensagemParaCopiar = widget.alerta.mensagemBalcao;
+    
+    // Fallback de segurança: Se o JSON falhar ou vier "N/A", cria uma mensagem básica pra não quebrar a UX
+    if (mensagemParaCopiar == "N/A" || mensagemParaCopiar.isEmpty) {
+      print("⚠️ [BALCÃO] Mensagem do balcão não disponível, usando fallback.");
+      mensagemParaCopiar = "👋 Olá! Gostaria de cotar a emissão do trecho: ${widget.alerta.trecho}\nCompanhia: ${widget.alerta.programa}";
+    }
+
+    // Copia para a Área de Transferência do celular/PC
+    await Clipboard.setData(ClipboardData(text: mensagemParaCopiar));
+    
+    // Mostra o aviso verde de sucesso pro cliente
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("📋 Mensagem copiada! Cole no grupo do Balcão."),
+          backgroundColor: AppTheme.green,
+          duration: Duration(seconds: 3),
+        )
+      );
+    }
+
+    // 🚀 2. O REDIRECIONAMENTO PRO WHATSAPP
     try {
-      // 1. Busca a configuração
+      // 1. Busca a configuração do Gist
       final config = await DiscoveryService().getConfig();
       final String? urlGist = config?.whatsappGroupUrl;
 
-      // 2. Define o link final
+      // 2. Define o link final do grupo
       final String urlFinal = (urlGist != null && urlGist.isNotEmpty) 
           ? urlGist 
           : "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
@@ -977,10 +1042,9 @@ class _AlertCardState extends State<AlertCard> {
       
       print("🚀 [WPP] TENTANDO ABRIR O LINK...");
       
-      // 3. Vai direto pro abraço (sem o canLaunchUrl que às vezes buga)
+      // 3. Abre o WhatsApp com a rota certa dependendo se é Web ou Celular
       await launchUrl(
         uri, 
-        // Na web, platformDefault é melhor. No celular, externalApplication força abrir o app do WhatsApp.
         mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
       );
       
@@ -996,6 +1060,31 @@ class _AlertCardState extends State<AlertCard> {
           )
         );
       }
+    }
+  }
+
+  void _emitirComAAgencia() async {
+    print("🟢 [AGÊNCIA] Abrindo Link da Agência...");
+    
+    // 🚀 AGORA ELE LÊ A VARIÁVEL NOVA QUE VOCÊ CRIOU NO ALERT.DART!
+    String urlAgencia = widget.alerta.link_agencia;
+
+    // Se a variável nova falhar, tenta ler o link antigo por segurança
+    if (urlAgencia == "N/A" || urlAgencia.isEmpty) {
+        urlAgencia = widget.alerta.link ?? "";
+    }
+
+    if (urlAgencia.isEmpty) {
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Link da Agência não disponível para esta emissão.")));
+        return;
+    }
+    
+    final Uri url = Uri.parse(urlAgencia);
+    
+    try {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link da agência.")));
     }
   }
 
@@ -1019,16 +1108,28 @@ class _AlertCardState extends State<AlertCard> {
 
     String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
 
+    // 🚀 NOVO: O EFEITO DOURADO VIP (Ativa o glow apenas se clicado)
+    BoxShadow blurDourado = widget.isHighlighted 
+        ? const BoxShadow(color: Colors.amberAccent, blurRadius: 20, spreadRadius: 2)
+        : const BoxShadow(color: Colors.transparent);
+
     // AnimatedContainer: Um Container que anima suas propriedades automaticamente (como transitions no CSS).
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 500), // 🚀 NOVO: Aumentado para 500ms pra transição do dourado ficar mais bonita
       curve: Curves.easeInOut,
       margin: const EdgeInsets.only(bottom: 16), // Espaçamento externo
       decoration: BoxDecoration(
         color: corFundo,
         borderRadius: BorderRadius.circular(12), // Border-radius do CSS
-        border: Border.all(color: _isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
-        boxShadow: _isExpanded ? [BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1)] : [],
+        // 🚀 NOVO: Borda dourada espessa se clicado, normal se não
+        border: Border.all(
+          color: widget.isHighlighted ? Colors.amberAccent : (_isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
+          width: widget.isHighlighted ? 2.0 : 1.0
+        ),
+        boxShadow: [
+          blurDourado, // 🚀 NOVO: Aplica o Blur
+          if (_isExpanded && !widget.isHighlighted) BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1)
+        ],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -1062,9 +1163,9 @@ class _AlertCardState extends State<AlertCard> {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            Text(prog, style: TextStyle(color: corPrincipal, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                            Text(prog, style: TextStyle(color: corPrincipal, fontSize: 15, fontWeight: FontWeight.bold, letterSpacing: 1)),
                             const Text(" • ", style: TextStyle(color: AppTheme.muted)),
-                            Text("${widget.alerta.milhas} milhas", style: const TextStyle(color: AppTheme.text, fontSize: 12)),
+                            Text("${widget.alerta.milhas} milhas", style: const TextStyle(color: AppTheme.text, fontSize: 14, fontWeight: FontWeight.w400)),
                           ],
                         ),
                       ],
@@ -1090,20 +1191,23 @@ class _AlertCardState extends State<AlertCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Divider(color: AppTheme.border, height: 20),
+                    const Divider(color: AppTheme.border, height: 20), // Linha divisória sutil
                     
-// Grid de Dados Extraídos (Metadados)
-                    Row(
+                  // Grid de Dados Extraídos (Metadados)
+                                      // Envolva a Row com Padding
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0), // 👈 Aqui define a margem das duas pontas
+                    child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         _buildInfoColumn("IDA", widget.alerta.dataIda),
                         _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
-                        _buildInfoColumn("CUSTO (Fabricado)", widget.alerta.valorFabricado),//deixar azul
-                        // 🚀 TROCAMOS O NOME E A VARIÁVEL
-                        _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true), 
+                        _buildInfoColumn("CUSTO (Fabricado)", widget.alerta.valorFabricado),
+                        _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true),
                       ],
                     ),
-                    const SizedBox(height: 16), // Espaçamento entre o grid e a descrição
+                  ),
+                  const SizedBox(height: 16), // Espaçamento entre o grid e a descrição
 
                   Container(
                       height: 175, // Altura fixa e compacta
@@ -1143,33 +1247,61 @@ class _AlertCardState extends State<AlertCard> {
                             backgroundColor: corPrincipal,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 4, // Sombra para destacar o botão
+                            shadowColor: corPrincipal.withOpacity(0.4),
                           ),
                           icon: const Icon(Icons.open_in_browser, size: 18),
-                          label: const Text("EMITIR AGORA", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          label: const Text("EMITIR COM MILHAS PRÓPRIAS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                           onPressed: _abrirLink,
                         ),
                       ),
                     ),
                   
-                  // Botão 2: CONFERIR GRUPO (Novo)
+                  // Botão 2: EMITIR NO BALCÃO (Com a mensagem copiada para o clipboard)
                     SizedBox(
                       width: double.infinity,
                       height: 45,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF25D366),
-                          foregroundColor: Colors.white,
+                          backgroundColor: AppTheme.esmerald,
+                          foregroundColor: AppTheme.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          elevation: 4, // Sombra leve para destacar o botão
+                            shadowColor: AppTheme.muted.withOpacity(0.4),
+
                         ),
                         // Substituindo o Icon por Image.network
-                        icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 18),
-                        label: const Text("CONFERIR NO GRUPO", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        icon: const Icon(Icons.local_atm_rounded, size: 20),
+                        label: const Text("EMITIR NO BALCÃO", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                         onPressed: () {
-                        print("👉 O BOTÃO FOI APERTADO NA TELA!");
-                        _abrirWpp();
+                        _abrirBalcao();
                       },
                       ),
                     ),
+
+                    // Botão 3: EMITIR COM FÃMILHASVIP (Novo)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 45,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.golden,
+                            foregroundColor: AppTheme.surface,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 4,
+                            shadowColor: AppTheme.amber.withOpacity(0.4),
+                          ),
+                          icon: const Icon(Icons.verified_user_rounded, size: 20),
+                          label: const Text("EMITIR COM O FÃMILHASVIP", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          onPressed: () {
+                          _emitirComAAgencia();
+                          }
+                        )
+
+                      ),
+                    )
                   ],
                 ),
               ),
@@ -1183,14 +1315,14 @@ class _AlertCardState extends State<AlertCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 9, letterSpacing: 1)),
+        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
         Text(
           valor, 
           style: TextStyle(
             color: isHighlight ? AppTheme.green : Colors.white, 
-            fontSize: 12, 
-            fontWeight: isHighlight ? FontWeight.bold : FontWeight.normal
+            fontSize: 16, 
+            fontWeight: isHighlight ? FontWeight.w900 : FontWeight.w700,
           )
         ),
       ],

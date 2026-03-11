@@ -44,6 +44,11 @@ class Alert {
   /// Detalhes adicionais sobre a emissão.
   final String detalhes;
 
+  //link para emissão direta na agência parceira 
+  final String link_agencia;
+
+  final String mensagemBalcao;
+
   /// Construtor padrão para a classe [Alert].
   Alert({
     required this.id,
@@ -59,6 +64,8 @@ class Alert {
     this.valorEmissao = "N/A",
     this.valorBalcao = "N/A",
     this.detalhes = "N/A",
+    this.link_agencia = "N/A",
+    this.mensagemBalcao = "N/A",
   });
 
   // 🚀 TRADUTOR DE DATAS: Converte texto (Março) para número (03)
@@ -125,6 +132,8 @@ class Alert {
       valorEmissao: json['valorEmissao'] ?? meta['valor_emissao'] ?? 'N/A',
       valorBalcao: json['valorBalcao'] ?? meta['valor_balcao'] ?? 'N/A',
       detalhes: json['detalhes'] ?? meta['detalhes'] ?? '',
+      link_agencia: json['link_agencia'] ?? meta['link_agencia'] ?? 'N/A',
+      mensagemBalcao: json['mensagemBalcao'] ?? meta['mensagem_balcao'] ?? 'N/A',
     );
   }
 
@@ -145,6 +154,8 @@ class Alert {
       'valorEmissao':   valorEmissao,
       'valorBalcao':    valorBalcao,
       'detalhes':       detalhes,
+      'link_agencia': link_agencia,
+      'mensagemBalcao': mensagemBalcao,
     };
   }
 }

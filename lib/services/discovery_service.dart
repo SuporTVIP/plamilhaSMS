@@ -64,7 +64,7 @@ class DiscoveryConfig {
       status: json['status'],
       pollingIntervalSeconds: json['polling_interval_seconds'] ?? 1800,
       economyMode: EconomyMode.fromJson(json['economy_mode']),
-      whatsappGroupUrl: json['whatsapp_group_url'] ?? 'https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk', 
+      whatsappGroupUrl: json['whatsapp_group_balcao_url'] ?? 'https://chat.whatsapp.com/G5kPwwdBvagEzBKCSo0TEX', 
     );
   }
 
