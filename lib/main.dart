@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 //import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
+import 'dart:ui';
 import 'widgets/consentimento_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -987,6 +988,8 @@ class AlertCard extends StatefulWidget {
 
 class _AlertCardState extends State<AlertCard> {
   bool _isExpanded = false;
+  bool _blurCusto = false;
+  bool _blurBalcao = false;
 
   /// Tenta abrir o link de emissão no navegador externo.
   void _abrirLink() async {
@@ -1202,8 +1205,34 @@ void _abrirBalcao() async {
                       children: [
                         _buildInfoColumn("IDA", widget.alerta.dataIda),
                         _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
-                        _buildInfoColumn("CUSTO (Fabricado)", widget.alerta.valorFabricado),
-                        _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true),
+                      AnimatedScale(
+                        scale: _blurCusto ? 1.1 : 1.0, // Aumenta 10% no foco
+                        duration: const Duration(milliseconds: 200),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: _blurCusto ? corPrincipal.withOpacity(0.1) : Colors.transparent, // Fundo sutil
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: _blurCusto ? corPrincipal : Colors.transparent), // Borda de foco
+                          ),
+                          child: _buildInfoColumn("FABRICADO", widget.alerta.valorFabricado),
+                        ),
+                      ),
+                        AnimatedScale(
+                          scale: _blurBalcao ? 1.1 : 1.0, // Aumenta 10% no foco
+                          duration: const Duration(milliseconds: 200),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: _blurBalcao ? corPrincipal.withOpacity(0.1) : Colors.transparent, // Fundo sutil
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _blurBalcao ? corPrincipal : Colors.transparent), // Borda de foco
+                            ),
+                            child: _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1238,21 +1267,30 @@ void _abrirBalcao() async {
                   // Botão 1: EMITIR AGORA
                   if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8), // Pequeno espaço entre os botões
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: SizedBox(
                         width: double.infinity,
                         height: 45,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: corPrincipal,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            elevation: 4, // Sombra para destacar o botão
-                            shadowColor: corPrincipal.withOpacity(0.4),
+                        // 1. O GestureDetector envolve o botão para capturar o toque no Mobile
+                        child: GestureDetector(
+                          onTapDown: (_) => setState(() => _blurCusto = true),
+                          onTapUp: (_) => setState(() => _blurCusto = false),
+                          onTapCancel: () => setState(() => _blurCusto = false),
+                          child: ElevatedButton.icon(
+                            // 2. O onHover captura o mouse no PC
+                            onHover: (hovering) => setState(() => _blurCusto = hovering),
+                            onPressed: _abrirLink,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: corPrincipal,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              elevation: 4,
+                              shadowColor: corPrincipal.withOpacity(0.4),
+                            ),
+                            icon: const Icon(Icons.open_in_browser, size: 18),
+                            label: const Text("EMITIR COM MILHAS PRÓPRIAS", 
+                              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                           ),
-                          icon: const Icon(Icons.open_in_browser, size: 18),
-                          label: const Text("EMITIR COM MILHAS PRÓPRIAS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                          onPressed: _abrirLink,
                         ),
                       ),
                     ),
@@ -1261,23 +1299,28 @@ void _abrirBalcao() async {
                     SizedBox(
                       width: double.infinity,
                       height: 45,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.esmerald,
-                          foregroundColor: AppTheme.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          elevation: 4, // Sombra leve para destacar o botão
+                      // 1. O GestureDetector envolve o botão
+                      child: GestureDetector(
+                        onTapDown: (_) => setState(() => _blurBalcao = true),
+                        onTapUp: (_) => setState(() => _blurBalcao = false),
+                        onTapCancel: () => setState(() => _blurBalcao = false),
+                        child: ElevatedButton.icon(
+                          // 2. O onHover captura o mouse
+                          onHover: (hovering) => setState(() => _blurBalcao = hovering),
+                          onPressed: _abrirBalcao,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.esmerald,
+                            foregroundColor: AppTheme.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 4,
                             shadowColor: AppTheme.muted.withOpacity(0.4),
-
+                          ),
+                          icon: const Icon(Icons.local_atm_rounded, size: 20),
+                          label: const Text("EMITIR NO BALCÃO", 
+                            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                         ),
-                        // Substituindo o Icon por Image.network
-                        icon: const Icon(Icons.local_atm_rounded, size: 20),
-                        label: const Text("EMITIR NO BALCÃO", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                        onPressed: () {
-                        _abrirBalcao();
-                      },
                       ),
-                    ),
+          ),
 
                     // Botão 3: EMITIR COM FÃMILHASVIP (Novo)
                     Padding(
@@ -1315,13 +1358,13 @@ void _abrirBalcao() async {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w600)),
+        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
         const SizedBox(height: 4),
         Text(
           valor, 
           style: TextStyle(
             color: isHighlight ? AppTheme.green : Colors.white, 
-            fontSize: 16, 
+            fontSize: 13.5, 
             fontWeight: isHighlight ? FontWeight.w900 : FontWeight.w700,
           )
         ),
