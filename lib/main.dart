@@ -263,46 +263,272 @@ class MilhasAlertApp extends StatelessWidget {
 // ROTEADOR INICIAL
 // ==========================================
 /// Tela de transição (Splash) que decide se o usuário vai para o Login ou para o App.
+// ==========================================
+// ROTEADOR INICIAL — INTRO CINEMATOGRÁFICA
+// ==========================================
 class SplashRouter extends StatefulWidget {
   const SplashRouter({super.key});
-
   @override
   State<SplashRouter> createState() => _SplashRouterState();
 }
 
-class _SplashRouterState extends State<SplashRouter> {
-  /// Ciclo de Vida: Chamado assim que o Widget é inserido na árvore.
-  ///
-  /// Analogia: Similar ao `useEffect(() => ..., [])` no React ou `OnInit` no Angular/C#.
+class _SplashRouterState extends State<SplashRouter>
+    with TickerProviderStateMixin {
+
+  // ── Controladores ──────────────────────────────────────────────
+  late final AnimationController _ctrlLetterbox;
+  late final AnimationController _ctrlLogo;
+  late final AnimationController _ctrlGlow;
+  late final AnimationController _ctrlExit;
+
+  // ── Animações ──────────────────────────────────────────────────
+  late final Animation<double> _letterboxTop;    // barra superior
+  late final Animation<double> _letterboxBottom; // barra inferior
+  late final Animation<double> _logoOpacity;
+  late final Animation<double> _logoScale;
+  late final Animation<double> _glowRadius;
+  late final Animation<double> _exitOpacity;
+
+  bool _navigated = false;
+
   @override
   void initState() {
     super.initState();
-    _checkLogin();
+
+    // 1. Letterbox entra (300 ms)
+    _ctrlLetterbox = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 300));
+    _letterboxTop    = Tween(begin: -80.0, end: 0.0)
+        .animate(CurvedAnimation(parent: _ctrlLetterbox, curve: Curves.easeOut));
+    _letterboxBottom = Tween(begin: 80.0, end: 0.0)
+        .animate(CurvedAnimation(parent: _ctrlLetterbox, curve: Curves.easeOut));
+
+    // 2. Logo aparece (700 ms, começa após 400 ms)
+    _ctrlLogo = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 700));
+    _logoOpacity = Tween(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrlLogo, curve: Curves.easeIn));
+    _logoScale = Tween(begin: 0.82, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrlLogo, curve: Curves.easeOutBack));
+
+    // 3. Glow pulsa (900 ms, loop 2×)
+    _ctrlGlow = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 900));
+    _glowRadius = Tween(begin: 8.0, end: 36.0)
+        .animate(CurvedAnimation(parent: _ctrlGlow, curve: Curves.easeInOut));
+
+    // 4. Saída: fade para preto (500 ms)
+    _ctrlExit = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 500));
+    _exitOpacity = Tween(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _ctrlExit, curve: Curves.easeIn));
+
+    _runSequence();
   }
 
-  void _checkLogin() async {
-    bool firstUse = await AuthService().isFirstUse();
-    
-    // Pequeno delay para a tela não "piscar" rapidamente.
-    await Future.delayed(const Duration(milliseconds: 500));
+  Future<void> _runSequence() async {
+    // Paralelo: letterbox + verificação de login
+    await Future.wait([
+      Future.delayed(const Duration(milliseconds: 200)),
+      _ctrlLetterbox.forward(),
+    ]);
 
-    if (mounted) {
-      if (firstUse) {
-        // Redireciona para login (Analogia: Router.push no JS)
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
-      } else {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigator()));
+    await Future.delayed(const Duration(milliseconds: 100));
+    await _ctrlLogo.forward();
+
+    // Glow pulsa 2 vezes
+    for (int i = 0; i < 2; i++) {
+      await _ctrlGlow.forward();
+      await _ctrlGlow.reverse();
+    }
+
+    // Segurar logo por um instante (estilo Game Freak)
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Fade de saída + checar login simultaneamente
+    final nextScreen = _resolveNextScreen();
+    await _ctrlExit.forward();
+
+    if (mounted && !_navigated) {
+      _navigated = true;
+      final screen = await nextScreen;
+      if (mounted) {
+        Navigator.pushReplacement(
+          context, PageRouteBuilder(
+            pageBuilder: (_, __, ___) => screen,
+            transitionDuration: Duration.zero,
+          ),
+        );
       }
     }
+  }
+
+  Future<Widget> _resolveNextScreen() async {
+    final firstUse = await AuthService().isFirstUse();
+    return firstUse ? const LoginScreen() : const MainNavigator();
+  }
+
+  @override
+  void dispose() {
+    _ctrlLetterbox.dispose();
+    _ctrlLogo.dispose();
+    _ctrlGlow.dispose();
+    _ctrlExit.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.bg,
-      body: const Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+      backgroundColor: Colors.black,
+      body: AnimatedBuilder(
+        animation: Listenable.merge(
+            [_ctrlLetterbox, _ctrlLogo, _ctrlGlow, _ctrlExit]),
+        builder: (context, _) {
+          return Stack(
+            children: [
+
+              // ── Fundo com grade pontilhada sutil (estética cyberpunk/VIP) ──
+              Positioned.fill(
+                child: CustomPaint(painter: _DotGridPainter()),
+              ),
+
+              // ── Centro: Logo + nome ──────────────────────────────────────
+              Center(
+                child: Opacity(
+                  opacity: _logoOpacity.value,
+                  child: Transform.scale(
+                    scale: _logoScale.value,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+
+                        // Ícone com glow
+                        Container(
+                          width: 96, height: 96,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppTheme.accent.withOpacity(0.7),
+                                blurRadius: _glowRadius.value,
+                                spreadRadius: _glowRadius.value * 0.3,
+                              ),
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.08),
+                                blurRadius: _glowRadius.value * 2,
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/images/icon.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: AppTheme.accent.withOpacity(0.15),
+                                child: Icon(Icons.flight,
+                                    color: AppTheme.accent, size: 48),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 28),
+
+                        // Nome com split de cor (igual à AppBar)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text("FãMilhas",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 6,
+                                shadows: [
+                                  Shadow(color: AppTheme.accent.withOpacity(0.4),
+                                      blurRadius: _glowRadius.value),
+                                ],
+                              ),
+                            ),
+                            Text("VIP",
+                              style: TextStyle(
+                                color: AppTheme.accent,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w300,
+                                letterSpacing: 6,
+                                shadows: [
+                                  Shadow(color: AppTheme.accent,
+                                      blurRadius: _glowRadius.value * 1.2),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 10),
+
+                        // Tagline
+                        Text("RADAR DE EMISSÕES VIP",
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.35),
+                            fontSize: 10,
+                            letterSpacing: 4,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Barras letterbox ─────────────────────────────────────────
+              Positioned(
+                top: _letterboxTop.value,
+                left: 0, right: 0,
+                child: Container(height: 80, color: Colors.black),
+              ),
+              Positioned(
+                bottom: _letterboxBottom.value,
+                left: 0, right: 0,
+                child: Container(height: 80, color: Colors.black),
+              ),
+
+              // ── Fade de saída (overlay preto) ────────────────────────────
+              if (_ctrlExit.value > 0)
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: _exitOpacity.value,
+                    child: const ColoredBox(color: Colors.black),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
+}
+
+// ── Fundo pontilhado sutil ───────────────────────────────────────────────────
+class _DotGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.04)
+      ..strokeCap = StrokeCap.round;
+    const spacing = 28.0;
+    for (double x = 0; x < size.width; x += spacing) {
+      for (double y = 0; y < size.height; y += spacing) {
+        canvas.drawCircle(Offset(x, y), 1.2, paint);
+      }
+    }
+  }
+  @override
+  bool shouldRepaint(_DotGridPainter old) => false;
 }
 
 // ==========================================

@@ -195,14 +195,18 @@ Future<void> _checkNewAlerts(String gasUrl) async {
  // 🚀 PORTEIRO: Processa os filtros usando o Cérebro Central
   Future<void> _processarFiltrosENotificar(List<Alert> ineditos, SharedPreferences prefs) async {
     await prefs.reload();
-    // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
     final filtros = await UserFilters.load();
 
     List<Alert> aprovados = ineditos.where((alerta) {
-      return filtros.alertaPassaNoFiltro(alerta);
+      bool passa = filtros.alertaPassaNoFiltro(alerta);
+      if (!passa) {
+        print("⛔ [PORTEIRO] Cérebro Central barrou esta passagem: ${alerta.trecho}");
+      }
+      return passa;
     }).toList();
 
     if (aprovados.isNotEmpty) {
+      print("✅ [PORTEIRO] ${aprovados.length} alertas aprovados! Disparando Sirene/Push...");
       if (aprovados.length == 1) {
         _tocarNotificacaoLocal(
           titulo: "✈️ Oportunidade: ${aprovados.first.programa}",
@@ -214,10 +218,11 @@ Future<void> _checkNewAlerts(String gasUrl) async {
           corpo: "Encontramos ${aprovados.length} novas passagens dentro dos seus filtros!",
         );
       }
+    } else {
+      print("⚠️ [PORTEIRO] Novidades chegaram, mas NENHUMA passou no seu filtro Avançado de Origens/Destinos.");
     }
   }
 
-  // 🚀 NOVO: CONFIGURAÇÃO DO SOM E POP-UP NA TELA
   // 🚀 CONFIGURAÇÃO DO SOM E POP-UP NA TELA
   Future<void> _tocarNotificacaoLocal({required String titulo, required String corpo}) async {
     final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
