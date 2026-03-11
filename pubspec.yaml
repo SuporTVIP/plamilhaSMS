@@ -78,6 +78,7 @@ flutter:
 
   assets:
      - assets/sounds/ # Sons para alertas (moved under lib)
+     - assets/sounds/intro.mp3
      - assets/images/   # Imagens usadas na UI, como ícones e backgrounds
 
 

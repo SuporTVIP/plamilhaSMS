@@ -334,6 +334,9 @@ class _SplashRouterState extends State<SplashRouter>
     ]);
 
     await Future.delayed(const Duration(milliseconds: 100));
+    if (!kIsWeb) {
+  _introPlayer.play(AssetSource('sounds/intro.mp3')).ignore();
+}
     await _ctrlLogo.forward();
 
     // Glow pulsa 2 vezes
@@ -368,8 +371,11 @@ class _SplashRouterState extends State<SplashRouter>
     return firstUse ? const LoginScreen() : const MainNavigator();
   }
 
+  final AudioPlayer _introPlayer = AudioPlayer();
+
   @override
   void dispose() {
+     _introPlayer.dispose(); // Garantindo que o player de áudio seja liberado quando a tela for destruída
     _ctrlLetterbox.dispose();
     _ctrlLogo.dispose();
     _ctrlGlow.dispose();
@@ -441,7 +447,7 @@ class _SplashRouterState extends State<SplashRouter>
                           crossAxisAlignment: CrossAxisAlignment.baseline,
                           textBaseline: TextBaseline.alphabetic,
                           children: [
-                            Text("FãMilhas",
+                            Text("PLAMILHAS",
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 28,
