@@ -179,7 +179,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           ),
           payload: trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
         );
-      } catch (e) {
+      } catch (e) {  
         debugPrint("❌ [FCM-ERRO] Falha ao exibir a notificação visual: $e");
       }
     } else {
