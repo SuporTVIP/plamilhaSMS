@@ -123,23 +123,41 @@ void callbackDispatcher() {
 // 🚀 Handler de mensagens do Firebase (Push Oculto)
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-
-  debugPrint("🚨 [FCM] ACORDOU O BACKGROUND! Dados: ${message.data}");
+  // 1. Inicia o motor principal com segurança
   await Firebase.initializeApp();
-  print("📩 Push Oculto Recebido (Tela Apagada): ${message.data}");
+  debugPrint("🚨 [FCM] ACORDOU O BACKGROUND! Dados: ${message.data}");
 
-  if (message.data['action'] == 'SYNC_ALERTS' || message.data['tipo'] == 'NOVO_ALERTA') {
-    // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    final filtros = await UserFilters.load();
+  // 2. Extrai os dados BRUTOS do payload do Google Apps Script
+  final String action = message.data['action'] ?? '';
+  final String tipo = message.data['tipo'] ?? '';
+  
+  if (action == 'SYNC_ALERTS' || tipo == 'NOVO_ALERTA') {
+    debugPrint("⚙️ [FCM] Processando pacote de dados oculto...");
 
-    String programa = (message.data['programa'] ?? 'Geral');
-    String trecho = (message.data['trecho'] ?? 'Nova Passagem Encontrada!');
+    String programa = message.data['programa'] ?? 'Geral';
+    String trecho = message.data['trecho'] ?? 'Nova Oportunidade!';
+    String detalhes = message.data['detalhes'] ?? '';
 
-    // 🚀 A MÁGICA ACONTECE AQUI TAMBÉM
-    if (filtros.passaNoFiltroBasico(programa, trecho)) {
-      print("✅ Filtro Aprovado no Background! Preparando notificação...");
+    debugPrint("🔍 [FCM-RAIO-X] Recebido: Prog: $programa | Trecho: $trecho | Detalhes: $detalhes");
+
+    // 3. Carrega o Cérebro de forma BLINDADA
+    UserFilters filtros;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      filtros = await UserFilters.load();
+      debugPrint("🧠 [FCM-CÉREBRO] Filtros Carregados: Latam: ${filtros.latamAtivo}, Smiles: ${filtros.smilesAtivo}, Azul: ${filtros.azulAtivo}");
+      debugPrint("🧠 [FCM-CÉREBRO] Origens: ${filtros.origens} | Destinos: ${filtros.destinos}");
+    } catch (e) {
+      debugPrint("⚠️ [FCM-ERRO] Falha ao carregar filtros, assumindo padrão: $e");
+      filtros = UserFilters(); // Fallback para não crashar
+    }
+
+    // 4. Pergunta pro Cérebro se pode tocar a sirene
+    bool aprovado = filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes);
+
+    if (aprovado) {
+      debugPrint("✅ [FCM-PORTEIRO] Filtro APROVADO no Background! Disparando Sirene Dourada...");
       try {
         final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
         await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
@@ -162,11 +180,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           payload: trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
         );
       } catch (e) {
-        print("❌ [BACKGROUND] Falha ao disparar notificação: $e");
+        debugPrint("❌ [FCM-ERRO] Falha ao exibir a notificação visual: $e");
       }
     } else {
-      print("⛔ [BACKGROUND] BLOQUEADO pelo Cérebro Central (Destino ou Companhia não bate).");
+      debugPrint("⛔ [FCM-PORTEIRO] BLOQUEADO. O Voo não atende aos critérios do usuário.");
     }
+  } else {
+     debugPrint("🤷‍♂️ [FCM] Push recebido, mas não era um SYNC_ALERTS válido.");
   }
 }
 
@@ -720,26 +740,42 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   }
 
   /// Inicia a escuta da Stream de alertas.
+/// Inicia a escuta da Stream de alertas com Logs de Raio-X.
   void _iniciarMotorDeTracao() {
+    print("🚀 [UI-MOTOR] Iniciando Motor de Tração e escutando Stream...");
     _alertService.startMonitoring();
 
-    // Se inscreve na Stream (Analogia: .subscribe() no RxJS ou addEventListener no JS).
     _alertService.alertStream.listen((novosAlertas) async {
       if (mounted) {
-  // 🚀 ESCUDO ANTI-DUPLICAÇÃO: Só deixa passar o que tiver um ID inédito!
+        print("📥 [UI-MOTOR] O Serviço enviou ${novosAlertas.length} alertas recém-chegados.");
+
+        // 🚀 ESCUDO ANTI-DUPLICAÇÃO
         List<Alert> alertasIneditos = novosAlertas.where((novo) {
-          // Verifica se ESSE id já existe na nossa lista principal
-          return !_listaAlertasTodos.any((existente) => existente.id == novo.id);
+          bool repetido = _listaAlertasTodos.any((existente) => existente.id == novo.id);
+          if (repetido) print("♻️ [UI-MOTOR] Descartado (Já existe na tela): ${novo.trecho}");
+          return !repetido;
         }).toList();
 
-        // Se o servidor mandou coisas, mas todas eram repetidas, paramos por aqui silenciosamente.
-        if (alertasIneditos.isEmpty) return;
+        if (alertasIneditos.isEmpty) {
+          print("🛑 [UI-MOTOR] Todos os alertas recebidos já estavam na tela. Nada a fazer.");
+          return;
+        }
 
-        // Filtra APENAS os inéditos com as regras do usuário (Companhia, Origem, Destino)
-        List<Alert> novosQuePassaram = alertasIneditos.where((a) => _filtros.alertaPassaNoFiltro(a)).toList();
+        print("🌟 [UI-MOTOR] ${alertasIneditos.length} alertas são INÉDITOS! Passando pelo Cérebro Central...");
+
+        // 🚀 FILTRO COM LOGS DETALHADOS
+        List<Alert> novosQuePassaram = alertasIneditos.where((a) {
+          bool passa = _filtros.alertaPassaNoFiltro(a);
+          if (passa) {
+            print("✅ [UI-PORTEIRO] APROVADO: ${a.programa} | ${a.trecho}");
+          } else {
+            print("⛔ [UI-PORTEIRO] BARRADO: ${a.programa} | ${a.trecho}");
+          }
+          return passa;
+        }).toList();
 
         setState(() {
-          // Insere apenas os inéditos no topo da lista
+          // Insere apenas os inéditos no topo da lista principal
           _listaAlertasTodos.insertAll(0, alertasIneditos);
           _aplicarFiltrosNaTela(); 
           _isCarregando = false;
@@ -747,21 +783,27 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
 
         // 🚀 Feedback Sonoro e Visual (Notificação)
         if (novosQuePassaram.isNotEmpty) {
+          print("🔔 [UI-UX] ${novosQuePassaram.length} alertas passaram no filtro da UI! Disparando UX visual/sonora.");
           try {
             if (_isSoundEnabled) {
               await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
             }
             _mostrarNotificacao(novosQuePassaram.first);
           } catch (e) {
-            print("Erro ao tocar som: $e");
+            print("⚠️ [UI-UX] Erro ao tocar som: $e");
           }
+        } else {
+          print("🔕 [UI-UX] Alertas inéditos chegaram, mas NENHUM passou nos filtros. Não tocaremos a sirene.");
         }
       }
     });
 
     // Timeout de segurança para remover o loading se não houver internet.
     Future.delayed(const Duration(seconds: 4), () {
-      if (mounted && _isCarregando) setState(() => _isCarregando = false);
+      if (mounted && _isCarregando) {
+        print("⏱️ [UI-MOTOR] Timeout atingido. Removendo indicador de carregamento.");
+        setState(() => _isCarregando = false);
+      }
     });
   }
 
@@ -990,6 +1032,8 @@ class _AlertCardState extends State<AlertCard> {
   bool _isExpanded = false;
   bool _blurCusto = false;
   bool _blurBalcao = false;
+  bool _blurAgencia = false;
+ 
 
   /// Tenta abrir o link de emissão no navegador externo.
   void _abrirLink() async {
@@ -1095,6 +1139,12 @@ void _abrirBalcao() async {
   Widget build(BuildContext context) {
     Color corPrincipal = AppTheme.accent;
     Color corFundo = AppTheme.card;
+    bool taxaExiste = widget.alerta.taxas != null && 
+                    widget.alerta.taxas != "N/A" && 
+                    widget.alerta.taxas != "0";
+                    
+  bool linkAgenciaExiste = widget.alerta.link_agencia != "N/A" && 
+                           widget.alerta.link_agencia.isNotEmpty;
     
     final prog = widget.alerta.programa.toUpperCase();
     // Lógica visual dinâmica baseada na companhia aérea.
@@ -1202,21 +1252,63 @@ void _abrirBalcao() async {
                     padding: const EdgeInsets.symmetric(horizontal: 16.0), // 👈 Aqui define a margem das duas pontas
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildInfoColumn("IDA", widget.alerta.dataIda),
-                        _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: _buildInfoColumn("IDA", widget.alerta.dataIda),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
+                        ),
                       AnimatedScale(
                         scale: _blurCusto ? 1.1 : 1.0, // Aumenta 10% no foco
                         duration: const Duration(milliseconds: 200),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(4),
+                          padding: const EdgeInsets.only(top: 4, left: 4, right: 4, bottom: 20),
                           decoration: BoxDecoration(
                             color: _blurCusto ? corPrincipal.withOpacity(0.1) : Colors.transparent, // Fundo sutil
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: _blurCusto ? corPrincipal : Colors.transparent), // Borda de foco
                           ),
-                          child: _buildInfoColumn("FABRICADO", widget.alerta.valorFabricado),
+                          child: Stack(
+                            clipBehavior: Clip.none, // Permite que o toast "vaze" para fora do container sem ser cortado
+                            alignment: Alignment.center,
+                            children: [
+                              // 1. O seu valor normal
+                              _buildInfoColumn("FABRICADO", widget.alerta.valorFabricado, corValor: corPrincipal),
+                              
+                              // 2. O pequeno Toast flutuante
+                              Positioned(
+                                bottom: 36, // Empurra o toast para baixo do valor (ocupa o espaço do SizedBox logo abaixo)
+                                child: IgnorePointer( // Evita que o toast bloqueie cliques sem querer
+                                  child: AnimatedOpacity(
+                                    duration: const Duration(milliseconds: 200),
+                                    opacity: _blurCusto ? 1.0 : 0.0, // Mostra quando o mouse tá no botão
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: taxaExiste ? corPrincipal : Colors.redAccent,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    child: Text(
+                                       // 👈 Mensagem mais limpa e direta
+                                       taxaExiste ? "Taxas de R\$ ${widget.alerta.taxas} inclusas" : "Taxas não inclusas",
+                                       style: const TextStyle(
+                                         fontSize: 8.5, 
+                                         color: Colors.white, 
+                                         fontWeight: FontWeight.bold
+                                       ),
+                                       textAlign: TextAlign.center,
+                                     ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                         AnimatedScale(
@@ -1224,15 +1316,100 @@ void _abrirBalcao() async {
                           duration: const Duration(milliseconds: 200),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.all(4),
+                           padding: const EdgeInsets.only(top: 4, left: 4, right: 4, bottom: 20),
                             decoration: BoxDecoration(
                               color: _blurBalcao ? corPrincipal.withOpacity(0.1) : Colors.transparent, // Fundo sutil
                               borderRadius: BorderRadius.circular(4),
                               border: Border.all(color: _blurBalcao ? corPrincipal : Colors.transparent), // Borda de foco
                             ),
-                            child: _buildInfoColumn("BALCÃO", widget.alerta.valorBalcao, isHighlight: true),
+                            child: Stack(
+                              clipBehavior: Clip.none, // Permite que o toast "vaze" para fora do container sem ser cortado
+                              alignment: Alignment.center,
+                              children: [
+                                // 1. O seu valor normal
+                                _buildInfoColumn("Balcão", widget.alerta.valorBalcao, corValor: AppTheme.esmerald),
+
+                                // 2. O pequeno Toast flutuante
+                                Positioned(
+                                  bottom: 36, // Empurra o toast para baixo do valor (ocupa o espaço do SizedBox logo abaixo)
+                                  child: IgnorePointer( // Evita que o toast bloqueie cliques sem querer
+                                    child: AnimatedOpacity(
+                                      duration: const Duration(milliseconds: 200),
+                                      opacity: _blurBalcao ? 1.0 : 0.0, // Mostra quando o mouse tá no botão
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: corPrincipal, // Cor do fundo combinando com o destaque
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                child: Text(
+                                          // 👈 Mensagem mais limpa e direta
+                                          taxaExiste ? "Taxas de R\$ ${widget.alerta.taxas} inclusas" : "Taxas não inclusas",
+                                          style: const TextStyle(
+                                            fontSize: 8.5, 
+                                            color: Colors.white, 
+                                            fontWeight: FontWeight.bold
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
+                         AnimatedScale(
+                          scale: _blurAgencia ? 1.1 : 1.0, // Aumenta 10% no foco
+                          duration: const Duration(milliseconds: 200),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.only(top: 4, left: 4, right: 4, bottom: 20),
+                            decoration: BoxDecoration(
+                              color: _blurAgencia ? corPrincipal.withOpacity(0.1) : Colors.transparent, // Fundo sutil
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _blurAgencia ? corPrincipal : Colors.transparent), // Borda de foco
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none, // Permite que o toast "vaze" para fora do container sem ser cortado
+                              alignment: Alignment.center,
+                              children: [
+                                // 1. O seu valor normal
+                                _buildInfoColumn("AGÊNCIA", widget.alerta.valorEmissao, corValor: AppTheme.golden)                   ,
+
+                                // 2. O pequeno Toast flutuante
+                                Positioned(
+                                  bottom: 36, // Empurra o toast para baixo do valor (ocupa o espaço do SizedBox logo abaixo)
+                                  child: IgnorePointer( // Evita que o toast bloqueie cliques sem querer
+                                    child: AnimatedOpacity(
+                                      duration: const Duration(milliseconds: 200),
+                                      opacity: _blurAgencia ? 1.0 : 0.0, // Mostra quando o mouse tá no botão
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: corPrincipal, // Cor do fundo combinando com o destaque
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                                  // 👈 Mensagem mais limpa e direta
+                                                   taxaExiste ? "Taxas de R\$ ${widget.alerta.taxas} inclusas" : "Taxas não inclusas",
+                                                  style: const TextStyle(
+                                                    fontSize: 8.5, 
+                                                    color: Colors.white, 
+                                                    fontWeight: FontWeight.bold
+                                                  ),
+                                                  textAlign: TextAlign.center,
+                                                ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
                       ],
                     ),
                   ),
@@ -1320,7 +1497,7 @@ void _abrirBalcao() async {
                             style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                         ),
                       ),
-          ),
+                    ),
 
                     // Botão 3: EMITIR COM FÃMILHASVIP (Novo)
                     Padding(
@@ -1328,22 +1505,27 @@ void _abrirBalcao() async {
                       child: SizedBox(
                         width: double.infinity,
                         height: 45,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
+                        child: GestureDetector(
+                          onTapDown: (_) => setState(() => _blurAgencia = true),
+                          onTapUp: (_) => setState(() => _blurAgencia = false),
+                          onTapCancel: () => setState(() => _blurAgencia = false),
+                          child: ElevatedButton.icon(
+                            // 2. O onHover captura o mouse
+                            onHover: (hovering) => setState(() => _blurAgencia = hovering),
+                            onPressed: _emitirComAAgencia,
+                            style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.golden,
                             foregroundColor: AppTheme.surface,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            elevation: 4,
-                            shadowColor: AppTheme.amber.withOpacity(0.4),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              elevation: 4,
+                              shadowColor: AppTheme.amber.withOpacity(0.4),
+                            ),
+                            icon: const Icon(Icons.local_atm_rounded, size: 20),
+                            label: const Text("EMITIR COM FÃMILHASVIP", 
+                              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                           ),
-                          icon: const Icon(Icons.verified_user_rounded, size: 20),
-                          label: const Text("EMITIR COM O FÃMILHASVIP", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-                          onPressed: () {
-                          _emitirComAAgencia();
-                          }
-                        )
-
-                      ),
+                        ),
+                      )
                     )
                   ],
                 ),
@@ -1354,7 +1536,10 @@ void _abrirBalcao() async {
     );
   }
 
-  Widget _buildInfoColumn(String titulo, String valor, {bool isHighlight = false}) {
+  Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
+    // Se nenhuma cor for passada, usa branco.
+    final corExibicao = corValor ?? Colors.white; 
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1363,9 +1548,10 @@ void _abrirBalcao() async {
         Text(
           valor, 
           style: TextStyle(
-            color: isHighlight ? AppTheme.green : Colors.white, 
+            color: corExibicao, // 👈 Usa a nova variável de cor
             fontSize: 13.5, 
-            fontWeight: isHighlight ? FontWeight.w900 : FontWeight.w700,
+            // Fica "gordinho" (w900) se não for branco, senão fica w700
+            fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700,
           )
         ),
       ],
@@ -1919,6 +2105,10 @@ class FilterBottomSheet extends StatefulWidget {
 }
 
 class _FilterBottomSheetState extends State<FilterBottomSheet> {
+
+  // Adicione estas linhas:
+  final TextEditingController _origensController = TextEditingController();
+  final TextEditingController _destinosController = TextEditingController();
   late UserFilters _tempFiltros;
   List<String> _todosAeroportos = [];
   bool _isLoadingAeros = true;
@@ -1936,6 +2126,17 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     );
     _carregarAeroportos();
   }
+
+  // Adicione os FocusNodes:  
+  final FocusNode _origensFocus = FocusNode();
+  final FocusNode _destinosFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _origensController.dispose();
+    _destinosController.dispose();
+    super.dispose();
+  } // Evita vazamento de memória ao fechar o modal.
 
   void _carregarAeroportos() async {
     final list = await AeroportoService().getAeroportos();
@@ -2003,9 +2204,9 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             if (_isLoadingAeros) 
               const Center(child: CircularProgressIndicator(color: AppTheme.accent))
             else ...[
-              _buildAutocompleteChips("Origens", _tempFiltros.origens),
+              _buildAutocompleteChips("Origens", _tempFiltros.origens, _origensController, _origensFocus ), // 👈 Passando o controller
               const SizedBox(height: 20),
-              _buildAutocompleteChips("Destinos", _tempFiltros.destinos),
+              _buildAutocompleteChips("Destinos", _tempFiltros.destinos, _destinosController, _destinosFocus), // 👈 Passando o outro
             ],
             
             const SizedBox(height: 30),
@@ -2036,7 +2237,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
   }
 
   /// Constrói um campo de Autocomplete que gera Chips (Tags).
-  Widget _buildAutocompleteChips(String titulo, List<String> listaSelecionados) {
+  Widget _buildAutocompleteChips(String titulo, List<String> listaSelecionados, TextEditingController controller, FocusNode focusNode) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2062,6 +2263,9 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
         if (listaSelecionados.isNotEmpty) const SizedBox(height: 10),
 
         Autocomplete<String>(
+          textEditingController: controller,
+          focusNode: focusNode,
+
           optionsBuilder: (TextEditingValue textEditingValue) {
             if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
             return _todosAeroportos.where((aeroporto) => 
@@ -2070,12 +2274,18 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             );
           },
           onSelected: (String selecao) {
-            setState(() => listaSelecionados.add(selecao));
+           setState(() {
+            listaSelecionados.add(selecao);
+            // 🚀 A MÁGICA ACONTECE AQUI:
+            controller.clear(); 
+            });
           },
-          fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+          fieldViewBuilder: (BuildContext context, TextEditingController fieldTextEditingController, FocusNode fieldFocusNode, VoidCallback onFieldSubmitted) {
             return TextField(
-              controller: textEditingController,
-              focusNode: focusNode,
+              // ✅ Use o controlador que o próprio Autocomplete forneceu aqui (que é o seu!)
+              controller: fieldTextEditingController, 
+              // ✅ Use o focus node que o próprio Autocomplete forneceu aqui (que é o seu!)
+              focusNode: fieldFocusNode, 
               style: const TextStyle(color: Colors.white, fontSize: 14),
               decoration: InputDecoration(
                 hintText: "Adicionar $titulo...",
@@ -2085,13 +2295,17 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 fillColor: AppTheme.bg,
                 enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.border)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.accent)),
+                // ✅ Aqui você também deve usar o fieldTextEditingController
+                suffixIcon: fieldTextEditingController.text.isNotEmpty 
+                  ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setState(() => fieldTextEditingController.clear()))
+                  : null,
               ),
               onSubmitted: (value) {
                 if (value.trim().isNotEmpty && !listaSelecionados.contains(value.toUpperCase())) {
                   setState(() {
                     listaSelecionados.add(value.toUpperCase());
-                    textEditingController.clear();
-                    focusNode.requestFocus();
+                    fieldTextEditingController.clear(); // ✅ Limpa ao dar enter
+                    fieldFocusNode.requestFocus();
                   });
                 }
               },

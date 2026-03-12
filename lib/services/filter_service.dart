@@ -35,6 +35,20 @@ class UserFilters {
     this.destinos = const [],
   });
 
+  // 🚀 FUNÇÃO DE NORMALIZAÇÃO: Remove acentos, espaços extras e padroniza o caso.
+  static String _normalizar(String texto) {
+    return texto
+        .toLowerCase()
+        .replaceAll(RegExp(r'[áàâãä]'), 'a')
+        .replaceAll(RegExp(r'[éèêë]'), 'e')
+        .replaceAll(RegExp(r'[íìîï]'), 'i')
+        .replaceAll(RegExp(r'[óòôõö]'), 'o')
+        .replaceAll(RegExp(r'[úùûü]'), 'u')
+        .replaceAll(RegExp(r'[ç]'), 'c')
+        .trim()
+        .toUpperCase();
+  }
+
   /// Carrega as preferências salvas anteriormente no armazenamento local.
   ///
   /// Retorna as preferências padrão se não houver dados salvos.
@@ -42,9 +56,7 @@ class UserFilters {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? jsonStr = prefs.getString(_keyUserFilters);
 
-    if (jsonStr == null) {
-      return UserFilters();
-    }
+    if (jsonStr == null)  return UserFilters();
 
     try {
       final Map<String, dynamic> data = jsonDecode(jsonStr);
@@ -71,50 +83,72 @@ class UserFilters {
       'origens': origens,
       'destinos': destinos,
     });
-
     await prefs.setString(_keyUserFilters, jsonStr);
   }
 
   /// Verifica se um programa e trecho específicos passam no filtro.
-  bool passaNoFiltroBasico(String programa, String trecho) {
-    final String programaUpper = programa.toUpperCase();
-    final String trechoUpper = trecho.toUpperCase();
-    
-    // Filtro por Companhia Aérea
+  bool passaNoFiltroBasico(String programa, String trecho, {String? detalhes}) {
+    final String programaUpper = programa.toUpperCase(); //aqui não precisa normalizar pq os nomes das cias aéreas são bem padronizados, mas deixo em upper case pra garantir que a comparação seja case-insensitive
+    final String trechoUpper = trecho.toUpperCase(); //aqui também não precisa normalizar pq os trechos são bem padronizados (ex: "GRU - JFK"), mas deixo em upper case pra garantir que a comparação seja case-insensitive
+    final String detalhesUpper = _normalizar(detalhes ?? ""); //aqui sim normalizo porque os detalhes podem vir de fontes variadas e conter acentos, espaços extras, etc. Normalizar ajuda a garantir que a comparação seja mais robusta e menos suscetível a variações de formatação.
+
+    // 1. Filtro por Companhia Aérea (Obrigatório, nunca fura)
     if (programaUpper.contains("LATAM") && !latamAtivo) return false;
     if (programaUpper.contains("SMILES") && !smilesAtivo) return false;
     if (programaUpper.contains("AZUL") && !azulAtivo) return false;
 
-    // Filtro Geográfico (Origem e Destino)
-    if (!_testaMatch(origens, trechoUpper)) return false;
-    if (!_testaMatch(destinos, trechoUpper)) return false;
+    // Se o usuário não configurou nenhum filtro geográfico, tá liberado!
+    if (origens.isEmpty && destinos.isEmpty) return true;
 
-    return true;
+    // 2. Descobre se o voo tem Volta
+    bool temVolta = detalhesUpper.contains("VOLTA");
+
+    // 3. Quebra o trecho no meio para saber quem é a Origem e quem é o Destino (Ex: "JPA - GRU")
+    List<String> partesTrecho = trechoUpper.split('-');
+    String origemVoo = partesTrecho.isNotEmpty ? partesTrecho[0].trim() : trechoUpper;
+    String destinoVoo = partesTrecho.length > 1 ? partesTrecho[1].trim() : trechoUpper;
+
+    // 4. Testa a viagem no Sentido Normal (Ida: Origem -> Destino)
+    bool passaSentidoNormal = _bateComFiltro(origemVoo, origens) && _bateComFiltro(destinoVoo, destinos);
+
+    // 5. 🚀 A MÁGICA DA VOLTA! Testa o Sentido Invertido (Volta: Destino -> Origem)
+    bool passaSentidoInvertido = false;
+    if (temVolta) {
+      // Se tem volta, o passageiro vai sair do "Destino" e pousar na "Origem"
+      passaSentidoInvertido = _bateComFiltro(destinoVoo, origens) && _bateComFiltro(origemVoo, destinos);
+    }
+
+    // Se passar em QUALQUER UM dos dois sentidos, toca a sirene!
+    return passaSentidoNormal || passaSentidoInvertido;
   }
 
-  /// Verifica se um [Alert] completo atende aos critérios.
-  bool alertaPassaNoFiltro(Alert alerta) {
-    // 🚀 Agora ele reaproveita a lógica central!
-    return passaNoFiltroBasico(alerta.programa, alerta.trecho);
-  }
+  bool _bateComFiltro(String localVoo, List<String> listaUsuario) {
+    if (listaUsuario.isEmpty) return true;
 
-  /// Verifica se o texto do trecho contém algum dos locais filtrados (IATA ou Nome).
-  bool _testaMatch(List<String> locais, String trechoAlerta) {
-    // Se não houver filtro geográfico configurado, qualquer trecho é válido.
-    if (locais.isEmpty) return true;
+    // 🚀 Normalizamos o local do voo para comparação
+    final String localVooNorm = _normalizar(localVoo);
 
-    for (String local in locais) {
-      // Formato local: "GRU - SÃO PAULO"
-      final List<String> partes = local.split(' - ');
-      final String iata = partes[0].trim().toUpperCase();
-      final String cidade = partes.length > 1 ? partes[1].trim().toUpperCase() : "";
+    for (String filtroUsuario in listaUsuario) {
+      List<String> partesUsu = filtroUsuario.split(' - ');
+      
+      // 🚀 Normalizamos cada parte do filtro salvo pelo usuário
+      String iata = _normalizar(partesUsu[0]);
+      String cidade = partesUsu.length > 1 ? _normalizar(partesUsu[1]) : "";
 
-      if (trechoAlerta.contains(iata) || (cidade.isNotEmpty && trechoAlerta.contains(cidade))) {
+      if (localVooNorm.contains(iata) || (cidade.isNotEmpty && localVooNorm.contains(cidade))) {
         return true;
       }
     }
-
     return false;
+  }
+
+ /// Verifica se um [Alert] completo atende aos critérios.
+  bool alertaPassaNoFiltro(Alert alerta) {
+    return passaNoFiltroBasico(
+      alerta.programa, 
+      alerta.trecho, 
+      detalhes: alerta.detalhes,
+    );
   }
 }
 

@@ -49,6 +49,8 @@ class Alert {
 
   final String mensagemBalcao;
 
+  final String taxas;
+
   /// Construtor padrão para a classe [Alert].
   Alert({
     required this.id,
@@ -66,6 +68,7 @@ class Alert {
     this.detalhes = "N/A",
     this.link_agencia = "N/A",
     this.mensagemBalcao = "N/A",
+    this.taxas = "N/A",
   });
 
   // 🚀 TRADUTOR DE DATAS: Converte texto (Março) para número (03)
@@ -134,6 +137,7 @@ class Alert {
       detalhes: json['detalhes'] ?? meta['detalhes'] ?? '',
       link_agencia: json['link_agencia'] ?? meta['link_agencia'] ?? 'N/A',
       mensagemBalcao: json['mensagemBalcao'] ?? meta['mensagem_balcao'] ?? 'N/A',
+      taxas: json['taxas'] ?? meta['taxas'] ?? 'N/A',
     );
   }
 
@@ -145,7 +149,7 @@ class Alert {
       'programa':       programa,
       'data':           data.toIso8601String(),
       'link':           link,
- 
+      'taxas':          taxas,
       'trecho':         trecho,
       'dataIda':        dataIda,
       'dataVolta':      dataVolta,
