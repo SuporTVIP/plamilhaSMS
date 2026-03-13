@@ -27,7 +27,7 @@ class CacheService {
     final Box box = Hive.box(_boxName);
     final List<String> dataToSave = alerts
         .take(_maxAlerts)
-        .map((alert) => jsonEncode(alert.toJson()))
+        .map((Alert alert) => jsonEncode(alert.toJson()))
         .toList();
 
     await box.put('data', dataToSave);
@@ -41,16 +41,17 @@ class CacheService {
     final List<dynamic>? cachedData = box.get('data');
 
     if (cachedData == null) {
-      return [];
+      return const [];
     }
 
     try {
       return cachedData
-          .map((jsonStr) => Alert.fromJson(jsonDecode(jsonStr)))
+          .map((dynamic jsonStr) => Alert.fromJson(jsonDecode(jsonStr)))
           .toList();
     } catch (e) {
+      // ignore: avoid_print
       print("⚠️ Erro ao carregar alertas do cache: $e");
-      return [];
+      return const [];
     }
   }
 }

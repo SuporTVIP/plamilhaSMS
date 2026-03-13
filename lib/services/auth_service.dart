@@ -136,11 +136,11 @@ class AuthService {
         response = await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 15));
       } else {
         // No Android/iOS, precisamos seguir o redirecionamento 302 manualmente
-        final request = http.Request('POST', Uri.parse(serverUrl))
+        final http.Request request = http.Request('POST', Uri.parse(serverUrl))
           ..followRedirects = false
           ..body = bodyData;
 
-        final streamedResponse = await request.send().timeout(const Duration(seconds: 15));
+        final http.StreamedResponse streamedResponse = await request.send().timeout(const Duration(seconds: 15));
         response = await http.Response.fromStream(streamedResponse);
 
         if (response.statusCode == 302 || response.statusCode == 303) {
@@ -167,13 +167,13 @@ class AuthService {
             return {"sucesso": false, "mensagem": data['message']};
           }
         } else {
-          print("⚠️ Resposta inesperada: ${response.body}");
+          _debugLog("⚠️ Resposta inesperada: ${response.body}");
           return {"sucesso": false, "mensagem": "Erro de protocolo do servidor."};
         }
       }
       return {"sucesso": false, "mensagem": "Erro HTTP (${response.statusCode})"};
     } catch (e) {
-      print("❌ Erro Auth: $e");
+      _debugLog("❌ Erro Auth: $e");
       return {"sucesso": false, "mensagem": "Servidor offline ou bloqueio de rede."};
     }
   }
@@ -193,14 +193,14 @@ class AuthService {
         if (kIsWeb) {
           await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 10));
         } else {
-          final request = http.Request('POST', Uri.parse(serverUrl))
+          final http.Request request = http.Request('POST', Uri.parse(serverUrl))
             ..followRedirects = false
             ..body = bodyData;
           await request.send().timeout(const Duration(seconds: 10));
         }
       }
     } catch (e) {
-      print("⚠️ Erro ao remover aparelho do servidor: $e");
+      _debugLog("⚠️ Erro ao remover aparelho do servidor: $e");
     }
 
     await prefs.remove(_keyToken);
@@ -226,15 +226,15 @@ class AuthService {
         if (kIsWeb) {
           http.post(Uri.parse(serverUrl), body: bodyData);
         } else {
-          final request = http.Request('POST', Uri.parse(serverUrl))
+          final http.Request request = http.Request('POST', Uri.parse(serverUrl))
             ..followRedirects = false
             ..body = bodyData;
           request.send();
         }
-        print("🌐 Sessão encerrada de forma silenciosa.");
+        _debugLog("🌐 Sessão encerrada de forma silenciosa.");
       }
     } catch (e) {
-      print("⚠️ Falha ao deslogar silenciosamente: $e");
+      _debugLog("⚠️ Falha ao deslogar silenciosamente: $e");
     }
   }
 
@@ -245,11 +245,16 @@ class AuthService {
       await messaging.requestPermission();
 
       final String? fcmToken = await messaging.getToken();
-      print("🔑 FCM Token Capturado: $fcmToken");
+      _debugLog("🔑 FCM Token Capturado: $fcmToken");
       return fcmToken ?? "";
     } catch (e) {
-      print("❌ Erro ao capturar FCM Token: $e");
+      _debugLog("❌ Erro ao capturar FCM Token: $e");
       return "";
     }
+  }
+
+  void _debugLog(String message) {
+    // ignore: avoid_print
+    print(message);
   }
 }

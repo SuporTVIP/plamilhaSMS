@@ -21,10 +21,10 @@ class UserFilters {
   bool azulAtivo;
 
   /// Lista de origens permitidas (ex: ["GRU - SÃO PAULO"]).
-  List<String> origens;
+  final List<String> origens;
 
   /// Lista de destinos permitidos (ex: ["JFK - NEW YORK"]).
-  List<String> destinos;
+  final List<String> destinos;
 
   /// Construtor padrão com configurações de fábrica.
   UserFilters({
@@ -35,7 +35,7 @@ class UserFilters {
     this.destinos = const [],
   });
 
-  // 🚀 FUNÇÃO DE NORMALIZAÇÃO: Remove acentos, espaços extras e padroniza o caso.
+  /// Normaliza o texto removendo acentos e convertendo para maiúsculas.
   static String _normalizar(String texto) {
     return texto
         .toLowerCase()
@@ -68,6 +68,7 @@ class UserFilters {
         destinos: List<String>.from(data['destinos'] ?? []),
       );
     } catch (e) {
+      // ignore: avoid_print
       print("⚠️ Erro ao carregar filtros: $e");
       return UserFilters();
     }
@@ -88,9 +89,9 @@ class UserFilters {
 
   /// Verifica se um programa e trecho específicos passam no filtro.
   bool passaNoFiltroBasico(String programa, String trecho, {String? detalhes}) {
-    final String programaUpper = programa.toUpperCase(); //aqui não precisa normalizar pq os nomes das cias aéreas são bem padronizados, mas deixo em upper case pra garantir que a comparação seja case-insensitive
-    final String trechoUpper = trecho.toUpperCase(); //aqui também não precisa normalizar pq os trechos são bem padronizados (ex: "GRU - JFK"), mas deixo em upper case pra garantir que a comparação seja case-insensitive
-    final String detalhesUpper = _normalizar(detalhes ?? ""); //aqui sim normalizo porque os detalhes podem vir de fontes variadas e conter acentos, espaços extras, etc. Normalizar ajuda a garantir que a comparação seja mais robusta e menos suscetível a variações de formatação.
+    final String programaUpper = programa.toUpperCase();
+    final String trechoUpper = trecho.toUpperCase();
+    final String detalhesUpper = _normalizar(detalhes ?? "");
 
     // 1. Filtro por Companhia Aérea (Obrigatório, nunca fura)
     if (programaUpper.contains("LATAM") && !latamAtivo) return false;
@@ -101,15 +102,15 @@ class UserFilters {
     if (origens.isEmpty && destinos.isEmpty) return true;
 
     // 2. Descobre se o voo tem Volta
-    bool temVolta = detalhesUpper.contains("VOLTA");
+    final bool temVolta = detalhesUpper.contains("VOLTA");
 
     // 3. Quebra o trecho no meio para saber quem é a Origem e quem é o Destino (Ex: "JPA - GRU")
-    List<String> partesTrecho = trechoUpper.split('-');
-    String origemVoo = partesTrecho.isNotEmpty ? partesTrecho[0].trim() : trechoUpper;
-    String destinoVoo = partesTrecho.length > 1 ? partesTrecho[1].trim() : trechoUpper;
+    final List<String> partesTrecho = trechoUpper.split('-');
+    final String origemVoo = partesTrecho.isNotEmpty ? partesTrecho[0].trim() : trechoUpper;
+    final String destinoVoo = partesTrecho.length > 1 ? partesTrecho[1].trim() : trechoUpper;
 
     // 4. Testa a viagem no Sentido Normal (Ida: Origem -> Destino)
-    bool passaSentidoNormal = _bateComFiltro(origemVoo, origens) && _bateComFiltro(destinoVoo, destinos);
+    final bool passaSentidoNormal = _bateComFiltro(origemVoo, origens) && _bateComFiltro(destinoVoo, destinos);
 
     // 5. 🚀 A MÁGICA DA VOLTA! Testa o Sentido Invertido (Volta: Destino -> Origem)
     bool passaSentidoInvertido = false;
@@ -128,12 +129,12 @@ class UserFilters {
     // 🚀 Normalizamos o local do voo para comparação
     final String localVooNorm = _normalizar(localVoo);
 
-    for (String filtroUsuario in listaUsuario) {
-      List<String> partesUsu = filtroUsuario.split(' - ');
+    for (final String filtroUsuario in listaUsuario) {
+      final List<String> partesUsu = filtroUsuario.split(' - ');
       
       // 🚀 Normalizamos cada parte do filtro salvo pelo usuário
-      String iata = _normalizar(partesUsu[0]);
-      String cidade = partesUsu.length > 1 ? _normalizar(partesUsu[1]) : "";
+      final String iata = _normalizar(partesUsu[0]);
+      final String cidade = partesUsu.length > 1 ? _normalizar(partesUsu[1]) : "";
 
       if (localVooNorm.contains(iata) || (cidade.isNotEmpty && localVooNorm.contains(cidade))) {
         return true;
@@ -175,6 +176,7 @@ class AeroportoService {
         final List<dynamic> cachedList = jsonDecode(prefs.getString(_keyAeroCache)!);
         return List<String>.from(cachedList);
       } catch (e) {
+        // ignore: avoid_print
         print("⚠️ Erro ao decodificar cache de aeroportos: $e");
       }
     }
@@ -209,6 +211,7 @@ class AeroportoService {
         }
       }
     } catch (e) {
+      // ignore: avoid_print
       print("⚠️ Falha na rede ao sincronizar aeroportos: $e");
     }
 
@@ -221,11 +224,12 @@ class AeroportoService {
       try {
         return List<String>.from(jsonDecode(prefs.getString(_keyAeroCache)!));
       } catch (e) {
+        // ignore: avoid_print
         print("⚠️ Falha ao ler fallback do cache: $e");
       }
     }
 
-    return [
+    return const [
       "GRU - São Paulo",
       "CGH - São Paulo",
       "VCP - São Paulo",

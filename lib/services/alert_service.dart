@@ -8,7 +8,7 @@ import '../models/alert.dart';
 import 'cache_service.dart';
 import 'discovery_service.dart';
 
-/// Serviço de alertas — Arquitetura 100% Push
+/// Serviço de alertas — Arquitetura 100% Push.
 ///
 /// COMO FUNCIONA:
 /// 1. O Google Apps Script envia um FCM Data Message com o Alert COMPLETO (≈1.8KB < limite de 4KB).
@@ -21,7 +21,10 @@ import 'discovery_service.dart';
 class AlertService {
   // ── Singleton ─────────────────────────────────────────────────────────────
   static final AlertService _instancia = AlertService._interno();
+
+  /// Fábrica que retorna a instância única do serviço.
   factory AlertService() => _instancia;
+
   AlertService._interno();
 
   // ── Constantes ────────────────────────────────────────────────────────────
@@ -54,23 +57,25 @@ class AlertService {
   final List<String> _pendingHighlightQueue = [];
 
   /// Enfileira um trecho para ser destacado em dourado.
+  ///
   /// Chamado pelo onDidReceiveNotificationResponse e pelo cold-start check.
   void setPendingHighlight(String trecho) {
-    final trechoNormalizado = trecho.trim().toUpperCase();
+    final String trechoNormalizado = trecho.trim().toUpperCase();
     // Evita duplicatas consecutivas (ex: dois cliques rápidos na mesma notificação)
     if (_pendingHighlightQueue.isNotEmpty &&
         _pendingHighlightQueue.last == trechoNormalizado) return;
     _pendingHighlightQueue.add(trechoNormalizado);
-    print("✨ [SERVICE] Dourado enfileirado: $trechoNormalizado "
+    _debugLog("✨ [SERVICE] Dourado enfileirado: $trechoNormalizado "
         "(${_pendingHighlightQueue.length} na fila)");
   }
 
   /// Retira e retorna o próximo trecho da fila (FIFO).
+  ///
   /// Retorna null se a fila estiver vazia.
   String? consumePendingHighlight() {
     if (_pendingHighlightQueue.isEmpty) return null;
-    final valor = _pendingHighlightQueue.removeAt(0);
-    print("✨ [SERVICE] Dourado consumido: $valor "
+    final String valor = _pendingHighlightQueue.removeAt(0);
+    _debugLog("✨ [SERVICE] Dourado consumido: $valor "
         "(${_pendingHighlightQueue.length} restantes na fila)");
     return valor;
   }
@@ -83,18 +88,26 @@ class AlertService {
   /// Stream de alertas: emite listas de novos alertas para a UI desenhar.
   final StreamController<List<Alert>> _alertController =
       StreamController<List<Alert>>.broadcast();
+
+  /// Getter para a stream de alertas.
   Stream<List<Alert>> get alertStream => _alertController.stream;
 
   /// Stream de toque em notificação: emite o trecho clicado para acender o Dourado.
   final StreamController<String> _tapController =
       StreamController<String>.broadcast();
+
+  /// Getter para a stream de toques em notificação.
   Stream<String> get tapStream => _tapController.stream;
+
+  /// Registra um toque em uma notificação.
   void registrarToqueNotificacao(String payload) => _tapController.add(payload);
 
   // ── Label da AppBar ───────────────────────────────────────────────────────
+
+  /// Retorna um rótulo indicando o tempo desde a última sincronização.
   String get lastSyncLabel {
     if (_lastSyncTime == null) return 'Aguardando push...';
-    final diff = DateTime.now().difference(_lastSyncTime!);
+    final Duration diff = DateTime.now().difference(_lastSyncTime!);
     if (diff.inMinutes < 1)  return 'Agora mesmo';
     if (diff.inMinutes < 60) return 'Há ${diff.inMinutes} min';
     return 'Há ${diff.inHours}h';
@@ -119,7 +132,7 @@ class AlertService {
   // PONTO DE ENTRADA PÚBLICO — chamado pelo MainNavigator
   // ══════════════════════════════════════════════════════════════════════════
 
-  /// Inicia o monitoramento.
+  /// Inicia o monitoramento de alertas.
   ///
   /// Na arquitetura 100% Push, "monitorar" significa apenas ler o cache local
   /// que o background push handler preenche. Não há polling, não há timers.
@@ -134,6 +147,7 @@ class AlertService {
     await carregarDoCache();
   }
 
+  /// Para o monitoramento de alertas.
   void stopMonitoring() {
     _monitoringStarted = false;
   }
@@ -151,17 +165,17 @@ class AlertService {
   /// O ALERTS_CACHE_V2 nunca é atualizado automaticamente, então
   /// no web sempre executamos forceSync para buscar dados frescos.
   Future<void> carregarDoCache() async {
-    print("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...");
+    _debugLog("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...");
 
     // ── WEB: sem handler de background, deve sempre buscar via HTTP ──────────
     if (kIsWeb) {
-      print("🌐 [SERVICE] Web detectado. Sempre sincroniza via HTTP para dados frescos.");
+      _debugLog("🌐 [SERVICE] Web detectado. Sempre sincroniza via HTTP para dados frescos.");
       await forceSync(silencioso: true);
       return;
     }
 
     // ── MOBILE: lê do cache preenchido pelos pushes FCM ─────────────────────
-    final prefs = await SharedPreferences.getInstance();
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
 
     final List<String> cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
@@ -170,7 +184,7 @@ class AlertService {
       // Cache vazio = primeira instalação. Faz UMA sync HTTP e nunca mais.
       final bool jaTeveSyncInicial = prefs.getBool(_keySyncInicial) ?? false;
       if (!jaTeveSyncInicial) {
-        print("🌐 [SERVICE] Primeira instalação. Fazendo download inicial único...");
+        _debugLog("🌐 [SERVICE] Primeira instalação. Fazendo download inicial único...");
         await forceSync(silencioso: true); // HTTP estritamente silencioso
         await prefs.setBool(_keySyncInicial, true);
       }
@@ -178,7 +192,7 @@ class AlertService {
     }
 
     // Desserializa os alertas do cache
-    final List<Alert> alertasDoCache = cacheRaw.map((raw) {
+    final List<Alert> alertasDoCache = cacheRaw.map((String raw) {
       try {
         return Alert.fromJson(jsonDecode(raw));
       } catch (_) {
@@ -189,7 +203,7 @@ class AlertService {
     if (alertasDoCache.isNotEmpty) {
       _lastSyncTime = DateTime.now();
       _alertController.add(alertasDoCache);
-      print("✅ [SERVICE] ${alertasDoCache.length} alertas emitidos do cache local.");
+      _debugLog("✅ [SERVICE] ${alertasDoCache.length} alertas emitidos do cache local.");
     }
   }
 
@@ -198,60 +212,61 @@ class AlertService {
   // ══════════════════════════════════════════════════════════════════════════
 
   /// Busca alertas via HTTP no Google Apps Script.
+  ///
   /// Só é usado 1 vez na vida (ou se o usuário forçar via algum botão futuro).
   Future<void> forceSync({bool silencioso = true}) async {
     if (_isFetching) return;
     _isFetching = true;
-    print("🌐 [SERVICE] forceSync() HTTP iniciado...");
+    _debugLog("🌐 [SERVICE] forceSync() HTTP iniciado...");
 
     try {
-      final config = await _discovery.getConfig();
+      final DiscoveryConfig? config = await _discovery.getConfig();
       if (config == null || config.gasUrl.isEmpty) return;
 
-      final lastSyncStr =
+      final String lastSyncStr =
           DateTime.now().subtract(const Duration(hours: 48)).toIso8601String();
-      final uri = Uri.parse(config.gasUrl).replace(
+      final Uri uri = Uri.parse(config.gasUrl).replace(
           queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
 
-      final response =
+      final http.Response response =
           await http.get(uri).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200 ||
           !response.body.trim().startsWith('{')) return;
 
-      final body = jsonDecode(response.body);
+      final dynamic body = jsonDecode(response.body);
       if (body['status'] != 'success') return;
 
       final List<dynamic> rawData = body['data'] ?? [];
       if (rawData.isEmpty) return;
 
-      final hoje        = DateTime.now();
-      final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
+      final DateTime hoje        = DateTime.now();
+      final DateTime inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
 
       final List<Alert> alertsFromServer = rawData
-          .map((j) => Alert.fromJson(j))
-          .where((a) => a.data.isAfter(inicioDoDia))
+          .map((dynamic j) => Alert.fromJson(j))
+          .where((Alert a) => a.data.isAfter(inicioDoDia))
           .toList();
 
       if (alertsFromServer.isEmpty) return;
 
       // Salva no ALERTS_CACHE_V2 para unificar com os alertas de push
-      final prefs = await SharedPreferences.getInstance();
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
       final List<String> cacheAtual =
           prefs.getStringList(_keyCacheV2) ?? [];
-      final idsNoCache = cacheAtual.map((raw) {
+      final Set<String> idsNoCache = cacheAtual.map((String raw) {
         try { return jsonDecode(raw)['id'] as String; } catch (_) { return ''; }
       }).toSet();
 
-      final novos = alertsFromServer
-          .where((a) => !idsNoCache.contains(a.id))
+      final List<Alert> novos = alertsFromServer
+          .where((Alert a) => !idsNoCache.contains(a.id))
           .toList();
 
       if (novos.isNotEmpty) {
-        final novosSerializados = novos.map((a) => jsonEncode(a.toJson())).toList();
-        final cacheAtualizado = [...novosSerializados, ...cacheAtual].take(100).toList();
+        final List<String> novosSerializados = novos.map((Alert a) => jsonEncode(a.toJson())).toList();
+        final List<String> cacheAtualizado = [...novosSerializados, ...cacheAtual].take(100).toList();
         await prefs.setStringList(_keyCacheV2, cacheAtualizado);
-        print("💾 [SERVICE] forceSync salvou ${novos.length} alertas no cache.");
+        _debugLog("💾 [SERVICE] forceSync salvou ${novos.length} alertas no cache.");
       }
 
       // Emite para a UI silenciosamente (Sem apitar!)
@@ -259,13 +274,18 @@ class AlertService {
       _alertController.add(alertsFromServer);
 
       if (body['serverTime'] != null) {
-        await (await SharedPreferences.getInstance())
-            .setString(_keyLastSync, body['serverTime']);
+        final SharedPreferences p = await SharedPreferences.getInstance();
+        await p.setString(_keyLastSync, body['serverTime']);
       }
     } catch (e) {
-      print("⚠️ [SERVICE] Erro no forceSync: $e");
+      _debugLog("⚠️ [SERVICE] Erro no forceSync: $e");
     } finally {
       _isFetching = false;
     }
+  }
+
+  void _debugLog(String message) {
+    // ignore: avoid_print
+    print(message);
   }
 }

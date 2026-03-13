@@ -1,3 +1,4 @@
+// ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import '../services/auth_service.dart';
 
@@ -7,7 +8,7 @@ import '../services/auth_service.dart';
 /// Ele detecta quando o usuário fecha a aba ou o navegador para encerrar a sessão.
 void registerWebCloseListener() {
   // Escuta o evento de descarregamento da página (fechar aba/navegador)
-  html.window.onBeforeUnload.listen((event) async {
+  html.window.onBeforeUnload.listen((html.Event event) {
     // Executa um logout sem aviso prévio para liberar o slot na planilha
     AuthService().logoutSilencioso(); 
   });

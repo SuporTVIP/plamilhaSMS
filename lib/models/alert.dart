@@ -44,15 +44,17 @@ class Alert {
   /// Detalhes adicionais sobre a emissão.
   final String detalhes;
 
-  //link para emissão direta na agência parceira 
-  final String link_agencia;
+  /// Link para emissão direta na agência parceira.
+  final String linkAgencia;
 
+  /// Mensagem formatada para envio ao balcão.
   final String mensagemBalcao;
 
+  /// Valor das taxas de embarque.
   final String taxas;
 
   /// Construtor padrão para a classe [Alert].
-  Alert({
+  const Alert({
     required this.id,
     required this.mensagem,
     required this.programa,
@@ -66,18 +68,19 @@ class Alert {
     this.valorEmissao = "N/A",
     this.valorBalcao = "N/A",
     this.detalhes = "N/A",
-    this.link_agencia = "N/A",
+    this.linkAgencia = "N/A",
     this.mensagemBalcao = "N/A",
     this.taxas = "N/A",
   });
 
-  // 🚀 TRADUTOR DE DATAS: Converte texto (Março) para número (03)
+  /// Padroniza o formato de data, convertendo meses por extenso para numérico.
+  ///
+  /// Exemplo: "25 de Março" -> "25/03"
   static String _padronizarData(String dataBruta) {
     if (dataBruta == 'N/A' || dataBruta.isEmpty) return dataBruta;
     
     String formatada = dataBruta.toLowerCase();
     
-    // Dicionário de conversão
     const meses = {
       'janeiro': '01', 'jan': '01',
       'fevereiro': '02', 'fev': '02',
@@ -93,12 +96,10 @@ class Alert {
       'dezembro': '12', 'dez': '12',
     };
 
-    // Substitui as palavras pelos números
     meses.forEach((nome, numero) {
       formatada = formatada.replaceAll(nome, numero);
     });
 
-    // Remove espaços em branco perdidos (ex: "25/ 03" vira "25/03")
     return formatada.replaceAll(RegExp(r'\s+'), '');
   }
 
@@ -106,19 +107,18 @@ class Alert {
   ///
   /// O parâmetro [json] deve conter as chaves retornadas pela API do GAS.
   /// Metadados são processados separadamente a partir da string JSON no campo 'metadados'.
-// 🚀 2. COMO O APP LÊ DA INTERNET OU DO CACHE
   factory Alert.fromJson(Map<String, dynamic> json) {
     Map<String, dynamic> meta = {};
     try {
-      // Se a informação veio da Internet, ela terá a chave 'metadados'
       if (json['metadados'] != null && json['metadados'].toString().isNotEmpty) {
         meta = jsonDecode(json['metadados']);
       }
     } catch (e) {
+      // ignore: avoid_print
       print("Erro ao parsear metadados: $e");
     }
 
-    String alertaId = meta['id_app']?.toString() ?? json['id']?.toString() ?? 'ID_DESCONHECIDO';
+    final String alertaId = meta['id_app']?.toString() ?? json['id']?.toString() ?? 'ID_DESCONHECIDO';
 
     return Alert(
       id: alertaId,
@@ -126,7 +126,6 @@ class Alert {
       programa: json['programa'] ?? 'Desconhecido',
       data: DateTime.parse(json['data']).toLocal(),
       link: json['link'],
-      // 👇 A MÁGICA: Tenta ler direto do Cache (json) OU da Internet (meta)
       trecho: json['trecho'] ?? meta['trecho'] ?? 'N/A',
       dataIda: _padronizarData(json['dataIda'] ?? meta['data_ida'] ?? 'N/A'),
       dataVolta: _padronizarData(json['dataVolta'] ?? meta['data_volta'] ?? 'N/A'),
@@ -135,7 +134,7 @@ class Alert {
       valorEmissao: json['valorEmissao'] ?? meta['valor_emissao'] ?? 'N/A',
       valorBalcao: json['valorBalcao'] ?? meta['valor_balcao'] ?? 'N/A',
       detalhes: json['detalhes'] ?? meta['detalhes'] ?? '',
-      link_agencia: json['link_agencia'] ?? meta['link_agencia'] ?? 'N/A',
+      linkAgencia: json['link_agencia'] ?? meta['link_agencia'] ?? 'N/A',
       mensagemBalcao: json['mensagemBalcao'] ?? meta['mensagem_balcao'] ?? 'N/A',
       taxas: json['taxas'] ?? meta['taxas'] ?? 'N/A',
     );
@@ -158,7 +157,7 @@ class Alert {
       valorEmissao: data['valor_emissao']?.toString() ?? 'N/A',
       valorBalcao: data['valor_balcao']?.toString() ?? 'N/A',
       detalhes: data['detalhes']?.toString() ?? '',
-      link_agencia: data['link_agencia']?.toString() ?? 'N/A',
+      linkAgencia: data['link_agencia']?.toString() ?? 'N/A',
       mensagemBalcao: data['mensagem_balcao']?.toString() ?? 'N/A',
       taxas: data['taxas']?.toString() ?? 'N/A',
     );
@@ -168,20 +167,20 @@ class Alert {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'mensagem':       mensagem,
-      'programa':       programa,
-      'data':           data.toIso8601String(),
-      'link':           link,
-      'taxas':          taxas,
-      'trecho':         trecho,
-      'dataIda':        dataIda,
-      'dataVolta':      dataVolta,
-      'milhas':         milhas,
+      'mensagem': mensagem,
+      'programa': programa,
+      'data': data.toIso8601String(),
+      'link': link,
+      'taxas': taxas,
+      'trecho': trecho,
+      'dataIda': dataIda,
+      'dataVolta': dataVolta,
+      'milhas': milhas,
       'valorFabricado': valorFabricado,
-      'valorEmissao':   valorEmissao,
-      'valorBalcao':    valorBalcao,
-      'detalhes':       detalhes,
-      'link_agencia': link_agencia,
+      'valorEmissao': valorEmissao,
+      'valorBalcao': valorBalcao,
+      'detalhes': detalhes,
+      'link_agencia': linkAgencia,
       'mensagemBalcao': mensagemBalcao,
     };
   }

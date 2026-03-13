@@ -2,22 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Diálogo de consentimento para o processamento de SMS.
+///
+/// Apresenta os termos de uso e política de privacidade relacionados à captura
+/// de mensagens SMS para fins operacionais.
 class ConsentimentoSmsDialog extends StatefulWidget {
+  /// Callback executado quando o usuário aceita os termos.
   final VoidCallback onAccepted;
 
-  const ConsentimentoSmsDialog({Key? key, required this.onAccepted}) : super(key: key);
+  /// Construtor padrão para [ConsentimentoSmsDialog].
+  const ConsentimentoSmsDialog({super.key, required this.onAccepted});
 
-  // Função estática para facilitar a chamada em qualquer lugar do app
+  /// Exibe o diálogo se o usuário ainda não tiver aceitado os termos.
   static Future<void> showIfNeeded(BuildContext context, VoidCallback onAccepted) async {
-    final prefs = await SharedPreferences.getInstance();
-    final hasConsented = prefs.getBool('TERMS_ACCEPTED_SMS') ?? false;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool hasConsented = prefs.getBool('TERMS_ACCEPTED_SMS') ?? false;
 
     if (!hasConsented) {
       if (context.mounted) {
         showDialog(
           context: context,
           barrierDismissible: false, // O usuário não pode fechar clicando fora
-          builder: (context) => ConsentimentoSmsDialog(onAccepted: onAccepted),
+          builder: (BuildContext context) => ConsentimentoSmsDialog(onAccepted: onAccepted),
         );
       }
     } else {
@@ -33,8 +39,8 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
   bool _checkPolitica = false;
   bool _checkFinalidade = false;
 
-  void _aceitarTermos() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _aceitarTermos() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool('TERMS_ACCEPTED_SMS', true); // Salva a assinatura digital do usuário
     if (mounted) {
       Navigator.of(context).pop();
@@ -79,6 +85,7 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
             const Divider(height: 30),
+
             // Checkbox 1: Política de Privacidade
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
@@ -91,7 +98,7 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
                   if (await canLaunchUrl(url)) {
                     await launchUrl(url, mode: LaunchMode.externalApplication);
                   } else {
-                    if (context.mounted) {
+                    if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text("Erro ao abrir a Política de Privacidade."))
                       );
@@ -100,12 +107,17 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
                 },
                 child: const Text(
                   "Li e concordo com a Política de Privacidade (Clique para ler).",
-                  style: TextStyle(fontSize: 13, decoration: TextDecoration.underline, color: Colors.blue),
+                  style: TextStyle(
+                    fontSize: 13,
+                    decoration: TextDecoration.underline,
+                    color: Colors.blue
+                  ),
                 ),
               ),
               value: _checkPolitica,
-              onChanged: (val) => setState(() => _checkPolitica = val ?? false),
+              onChanged: (bool? val) => setState(() => _checkPolitica = val ?? false),
             ),
+
             // Checkbox 2: Finalidade e Uso
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
@@ -115,7 +127,7 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
                 style: TextStyle(fontSize: 13),
               ),
               value: _checkFinalidade,
-              onChanged: (val) => setState(() => _checkFinalidade = val ?? false),
+              onChanged: (bool? val) => setState(() => _checkFinalidade = val ?? false),
             ),
           ],
         ),
