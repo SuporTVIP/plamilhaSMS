@@ -13,6 +13,7 @@ import 'utils/web_window_manager.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
 import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
 import 'dart:async';
+import 'utils/web_highlight.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -159,8 +160,12 @@ if (!kIsWeb) {
   // unawaited() garante que roda em paralelo — o app já está na tela
   if (kIsWeb) {
     _configurarPushWeb();
+    iniciarReceptorWebHighlight((String trecho) {
+      AlertService().setPendingHighlight(trecho);
+      }); 
   }
 }
+
 
 /// Configura push web em background, após o app já estar renderizado.
 /// Separado em função própria para não poluir o main().
@@ -705,50 +710,57 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   void _verificarNotificacaoDeAbertura() async {
     // ── CASO 1: Cold Start ────────────────────────────────────────────────
     // App estava COMPLETAMENTE FECHADO e abriu pelo clique na notificação.
-    // Não usamos mais o delay de 800ms (frágil). Em vez disso, guardamos
-    // o trecho no AlertService. Quando os cards carregarem via stream,
-    // o listener consome o pending e ativa o dourado com segurança.
+    // Enfileiramos o trecho e depois acionamos o dourado após o primeiro
+    // frame — independente de haver ou não alertas novos na stream.
     try {
       final details = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
       if (details != null &&
           details.didNotificationLaunchApp &&
           details.notificationResponse?.payload != null) {
         final payload = details.notificationResponse!.payload!;
-        print("👆 [UX-COLD] Cold Start detectado! Guardando pending: $payload");
+        print("👆 [UX-COLD] Cold Start detectado! Enfileirando: $payload");
         _alertService.setPendingHighlight(payload);
-        // NÃO chamamos _ativarBlurDourado aqui — a lista pode estar vazia ainda.
-        // O listener da stream vai consumir quando os cards chegarem (veja _iniciarMotorDeTracao).
+        // Drena a fila após o primeiro frame (lista já carregou via startMonitoring)
+        WidgetsBinding.instance.addPostFrameCallback((_) => _drenaFilaDourado());
       }
     } catch (e) {
       print("⚠️ [UX-COLD] Erro ao ler getNotificationAppLaunchDetails: $e");
     }
 
-    // ── CASO 2: Warm Start ────────────────────────────────────────────────
-    // App estava em background e o usuário clicou. O onDidReceiveNotificationResponse
-    // já chamou setPendingHighlight + registrarToqueNotificacao.
-    // O tapStream é um backup para garantir que o dourado acende imediatamente
-    // caso a lista já esteja populada neste momento.
+    // ── CASO 2: Warm Start (app em background, usuário clicou) ───────────
+    // onDidReceiveNotificationResponse já enfileirou via setPendingHighlight.
+    // O tapStream aciona o dourado imediatamente — a lista já está na tela.
     _alertService.tapStream.listen((trechoClicado) {
       print("👆 [UX-WARM] Tap recebido via stream: $trechoClicado");
       _ativarBlurDourado(trechoClicado);
     });
   }
 
+  /// Drena toda a fila de destaques pendentes e acende cada um em sequência.
+  /// Isso garante que 20 notificações acumuladas resultem em 20 destaques
+  /// corretos quando o usuário abrir o app e navegar pelos cards.
+  void _drenaFilaDourado() {
+    while (_alertService.pendingHighlightCount > 0) {
+      final trecho = _alertService.consumePendingHighlight();
+      if (trecho != null && mounted) {
+        print("✨ [UI-FILA] Drenando destaque: $trecho "
+            "(${_alertService.pendingHighlightCount} restantes)");
+        _ativarBlurDourado(trecho);
+      }
+    }
+  }
+
 // 🚀 ATIVA O DOURADO E DESLIGA DEPOIS DE 15 SEGUNDOS
   void _ativarBlurDourado(String trecho) {
     if (mounted) {
-      // Limpa os espaços e deixa maiúsculo para a comparação não falhar
-      String trechoLimpo = trecho.trim().toUpperCase();
-      print("✨ [UI-UX] Preparando o Dourado VIP para o trecho limpo: [$trechoLimpo]");
+      // 🚀 Remove emojis, traços, espaços. Fica tudo colado (ex: FORTALEZAPORTOVELHO)
+      String trechoNormalizado = trecho.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+      print("✨ [UI-UX] Dourado ativado para ID normalizado: $trechoNormalizado");
       
-      setState(() => _highlightedTrecho = trechoLimpo); 
+      setState(() => _highlightedTrecho = trechoNormalizado); 
       
-      // Assim dá tempo da internet baixar os dados do GAS tranquilamente (se fosse o caso)
       Future.delayed(const Duration(seconds: 15), () {
-        if (mounted) {
-          print("✨ [UI-UX] Apagando o Dourado VIP (Tempo de 15s expirado).");
-          setState(() => _highlightedTrecho = null);
-        }
+        if (mounted) setState(() => _highlightedTrecho = null);
       });
     }
   }
@@ -805,45 +817,35 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           return !repetido;
         }).toList();
 
-        if (alertasIneditos.isEmpty) {
-          print("🛑 [UI-MOTOR] Todos os alertas recebidos já estavam na tela. Nada a fazer.");
-          return;
-        }
+        if (alertasIneditos.isNotEmpty) {
+          print("🌟 [UI-MOTOR] ${alertasIneditos.length} alertas INÉDITOS! Passando pelo Cérebro...");
 
-        print("🌟 [UI-MOTOR] ${alertasIneditos.length} alertas são INÉDITOS! Passando pelo Cérebro Central...");
+          List<Alert> novosQuePassaram = alertasIneditos.where((a) {
+            bool passa = _filtros.alertaPassaNoFiltro(a);
+            if (passa) print("✅ [UI-PORTEIRO] APROVADO: ${a.programa} | ${a.trecho}");
+            else       print("⛔ [UI-PORTEIRO] BARRADO:  ${a.programa} | ${a.trecho}");
+            return passa;
+          }).toList();
 
-        // 🚀 FILTRO COM LOGS DETALHADOS
-        List<Alert> novosQuePassaram = alertasIneditos.where((a) {
-          bool passa = _filtros.alertaPassaNoFiltro(a);
-          if (passa) {
-            print("✅ [UI-PORTEIRO] APROVADO: ${a.programa} | ${a.trecho}");
-          } else {
-            print("⛔ [UI-PORTEIRO] BARRADO: ${a.programa} | ${a.trecho}");
-          }
-          return passa;
-        }).toList();
-
-        setState(() {
-          // Insere apenas os inéditos no topo da lista principal
-          _listaAlertasTodos.insertAll(0, alertasIneditos);
-          _aplicarFiltrosNaTela(); 
-          _isCarregando = false;
-        });
-
-        // ── DOURADO PÓS-RENDER ───────────────────────────────────────────
-        // Após o setState acima redesenhar a lista, verifica se há um
-        // "pending highlight" guardado no AlertService (pode ter sido
-        // registrado por um clique em notificação antes dos cards chegarem).
-        // addPostFrameCallback garante que os widgets já existem na tela
-        // antes de ativarmos o dourado — sem race condition de timing.
-        final pendingHighlight = _alertService.consumePendingHighlight();
-        if (pendingHighlight != null) {
-          print("✨ [UI-MOTOR] Consumindo pending highlight: $pendingHighlight");
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _ativarBlurDourado(pendingHighlight);
+          setState(() {
+            _listaAlertasTodos.insertAll(0, alertasIneditos);
+            _aplicarFiltrosNaTela();
+            _isCarregando = false;
           });
+        } else {
+          print("🛑 [UI-MOTOR] Todos já estavam na tela.");
+          if (_isCarregando) setState(() => _isCarregando = false);
         }
 
+        // ── DOURADO: drena a fila SEMPRE, independente de haver alertas novos ──
+        // ESTE É O FIX PRINCIPAL: antes, este bloco ficava dentro do
+        // `if (alertasIneditos.isNotEmpty)`, então nunca rodava quando todos
+        // os alertas eram duplicatas (que é o caso normal após o resume).
+        // Agora roda sempre que a stream emite, garantindo que o usuário
+        // veja o brilho no card correto mesmo que a lista não tenha mudado.
+        if (_alertService.pendingHighlightCount > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _drenaFilaDourado());
+        }
       }
     });
 
@@ -895,8 +897,16 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       print("📱 App abriu! Lendo dados locais...");
-      // 🚀 NADA DE INTERNET. SÓ LÊ O QUE O PUSH GUARDOU!
-      _alertService.carregarDoCache(); 
+      _alertService.carregarDoCache().then((_) {
+        // Após o cache ser carregado (e a stream emitir), drena a fila
+        // de destaques via postFrameCallback — garante que os widgets
+        // já existem na tela antes de acender o dourado.
+        // Isso cobre o caso onde o usuário acumulou N notificações,
+        // minimizou o app e agora está reabrindo.
+        if (_alertService.pendingHighlightCount > 0 && mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => _drenaFilaDourado());
+        }
+      });
     }
   }
 
@@ -1026,11 +1036,14 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
                 itemCount: _listaAlertasFiltrados.length,
                 itemBuilder: (context, index) {
                   final alerta = _listaAlertasFiltrados[index];
+                  
+                  // 🚀 Limpa o trecho do card também para a comparação ser exata!
+                  String trechoCardNormalizado = alerta.trecho.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+
                   return AlertCard(
                     alerta: alerta,
-                    // 🚀 BLINDAGEM NO MATCH DO TEXTO
                     isHighlighted: _highlightedTrecho != null && 
-                                   alerta.trecho.toUpperCase().trim().contains(_highlightedTrecho!),
+                                   trechoCardNormalizado.contains(_highlightedTrecho!),
                   );
                 },
               ),

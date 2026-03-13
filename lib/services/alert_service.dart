@@ -41,24 +41,42 @@ class AlertService {
   DateTime? _lastSyncTime;
   bool _isFetching               = false; // guarda apenas o forceSync inicial
 
-  // ── Destaque Dourado ──────────────────────────────────────────────────────
-  // Guarda o trecho que deve piscar em dourado quando os cards carregarem.
-  // Valor ESTÁVEL (não um stream): sobrevive a qualquer race condition de timing.
-  // Se os cards chegam antes do clique → o trecho já está guardado.
-  // Se o clique chega antes dos cards → o trecho fica aqui até eles chegarem.
-  String? _pendingHighlightTrecho;
+  // ── Fila de Destaques Dourados ────────────────────────────────────────────
+  // Cada notificação tocada pelo usuário coloca seu trecho nesta fila.
+  // Suporta N notificações pendentes (ex: usuário acumulou 20 alertas):
+  // cada clique enfileira seu trecho, e o app os consome na ordem de chegada.
+  //
+  // Por que fila e não variável simples?
+  //   Se o usuário acumulou 20 notificações e começa a clicar uma por uma
+  //   sem abrir o app, cada clique chama setPendingHighlight(). Com uma
+  //   variável simples, o clique 2 sobrescreveria o clique 1 antes de ser
+  //   consumido. Com a fila, todos ficam guardados em ordem.
+  final List<String> _pendingHighlightQueue = [];
 
+  /// Enfileira um trecho para ser destacado em dourado.
+  /// Chamado pelo onDidReceiveNotificationResponse e pelo cold-start check.
   void setPendingHighlight(String trecho) {
-    _pendingHighlightTrecho = trecho.trim().toUpperCase();
-    print("✨ [SERVICE] Dourado pendente guardado: $_pendingHighlightTrecho");
+    final trechoNormalizado = trecho.trim().toUpperCase();
+    // Evita duplicatas consecutivas (ex: dois cliques rápidos na mesma notificação)
+    if (_pendingHighlightQueue.isNotEmpty &&
+        _pendingHighlightQueue.last == trechoNormalizado) return;
+    _pendingHighlightQueue.add(trechoNormalizado);
+    print("✨ [SERVICE] Dourado enfileirado: $trechoNormalizado "
+        "(${_pendingHighlightQueue.length} na fila)");
   }
 
-  /// Retorna e LIMPA o trecho pendente (consome uma única vez).
+  /// Retira e retorna o próximo trecho da fila (FIFO).
+  /// Retorna null se a fila estiver vazia.
   String? consumePendingHighlight() {
-    final valor = _pendingHighlightTrecho;
-    _pendingHighlightTrecho = null;
+    if (_pendingHighlightQueue.isEmpty) return null;
+    final valor = _pendingHighlightQueue.removeAt(0);
+    print("✨ [SERVICE] Dourado consumido: $valor "
+        "(${_pendingHighlightQueue.length} restantes na fila)");
     return valor;
   }
+
+  /// Quantos destaques ainda estão na fila.
+  int get pendingHighlightCount => _pendingHighlightQueue.length;
 
   // ── Streams públicas ──────────────────────────────────────────────────────
 
