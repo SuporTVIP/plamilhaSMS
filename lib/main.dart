@@ -138,7 +138,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     String trecho = message.data['trecho'] ?? 'Nova Oportunidade!';
     String detalhes = message.data['detalhes'] ?? '';
 
-    debugPrint("🔍 [FCM-RAIO-X] Recebido: Prog: $programa | Trecho: $trecho | Detalhes: $detalhes");
+    // 🚀 RAIO-X FOCADO NA IDA E VOLTA
+    String detalhesUpper = detalhes.toUpperCase();
+    bool achouVolta = detalhesUpper.contains("VOLTA");
+
+    debugPrint("🔍 [FCM-RAIO-X] Prog: $programa | Trecho: $trecho");
+    debugPrint("🔍 [FCM-RAIO-X] Texto 'detalhes' tem ${detalhes.length} caracteres.");
+    debugPrint("🔄 [FCM-RAIO-X] Contém a palavra 'VOLTA'? -> ${achouVolta ? 'SIM ✅' : 'NÃO ❌'}");
+    if (!achouVolta) {
+      debugPrint("👀 [FCM-RAIO-X] Conteúdo dos detalhes recebidos: $detalhes");
+    }
 
     // 3. Carrega o Cérebro de forma BLINDADA
     UserFilters filtros;
@@ -179,7 +188,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           ),
           payload: trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
         );
-      } catch (e) {  
+      } catch (e) {
         debugPrint("❌ [FCM-ERRO] Falha ao exibir a notificação visual: $e");
       }
     } else {
@@ -235,6 +244,7 @@ void main() async {
   await flutterLocalNotificationsPlugin.initialize(
     settings: initializationSettings,
     onDidReceiveNotificationResponse: (NotificationResponse response) {
+      print("👆 [UX] O Usuário clicou na notificação! Payload recebido: ${response.payload}");
       if (response.payload != null && response.payload!.isNotEmpty) {
         // 🚀 O usuário clicou! Avisa o serviço para acender o Dourado!
         AlertService().registrarToqueNotificacao(response.payload!);
@@ -664,6 +674,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   // 🚀 1. VARIÁVEL DO SOM
   bool _isSoundEnabled = true; 
   bool _needsWebAudioInteraction = kIsWeb; // 🚀 Web precisa de interação para ativar o áudio
+  bool _isAppRecemAberto = false; // 🚀 O NOSSO ABAFADOR DE ECO
 
   // 🚀 NOVO: VARIÁVEL QUE GUARDA QUAL PASSAGEM DEVE PISCAR EM DOURADO
   String? _highlightedTrecho;
@@ -671,12 +682,16 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
     
+    _isAppRecemAberto = true;
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted) _isAppRecemAberto = false;
+    });
+
     _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
-    _verificarNotificacaoDeAbertura(); // 🚀 NOVO: Checa se o app abriu por um clique
+    _verificarNotificacaoDeAbertura(); 
   }
 
   // 🚀 NOVO: OUVINTE DE CLIQUES (BACKGROUND E FOREGROUND)
@@ -693,12 +708,20 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     });
   }
 
-  // 🚀 NOVO: ATIVA O DOURADO E DESLIGA DEPOIS DE 6 SEGUNDOS
+ // 🚀 NOVO: ATIVA O DOURADO E DESLIGA DEPOIS DE 15 SEGUNDOS
   void _ativarBlurDourado(String trecho) {
     if (mounted) {
-      setState(() => _highlightedTrecho = trecho);
-      Future.delayed(const Duration(seconds: 6), () {
-        if (mounted) setState(() => _highlightedTrecho = null);
+      print("✨ [UI-UX] Preparando o Dourado VIP para: $trecho");
+      
+      setState(() => _highlightedTrecho = trecho.toUpperCase()); // 🚀 Padroniza
+      
+      // 🚀 AUMENTAMOS PARA 15 SEGUNDOS!
+      // Assim dá tempo da internet baixar os dados do GAS tranquilamente
+      Future.delayed(const Duration(seconds: 15), () {
+        if (mounted) {
+          print("✨ [UI-UX] Apagando o Dourado VIP (Tempo expirado).");
+          setState(() => _highlightedTrecho = null);
+        }
       });
     }
   }
@@ -782,16 +805,23 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
         });
 
         // 🚀 Feedback Sonoro e Visual (Notificação)
-        if (novosQuePassaram.isNotEmpty) {
-          print("🔔 [UI-UX] ${novosQuePassaram.length} alertas passaram no filtro da UI! Disparando UX visual/sonora.");
-          try {
-            if (_isSoundEnabled) {
-              await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+if (novosQuePassaram.isNotEmpty) {
+          
+          // 🚀 SE O ABAFADOR ESTIVER LIGADO, ELE NÃO APITA E NÃO GERA NOTIFICAÇÃO!
+          if (_isAppRecemAberto) {
+            print("🔕 [UI-UX] App recém-aberto. Silenciando a sirene para não gerar eco.");
+          } else {
+            print("🔔 [UI-UX] ${novosQuePassaram.length} alertas passaram! Disparando UX visual/sonora.");
+            try {
+              if (_isSoundEnabled) {
+                await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+              }
+              _mostrarNotificacao(novosQuePassaram.first);
+            } catch (e) {
+              print("⚠️ [UI-UX] Erro ao tocar som: $e");
             }
-            _mostrarNotificacao(novosQuePassaram.first);
-          } catch (e) {
-            print("⚠️ [UI-UX] Erro ao tocar som: $e");
           }
+          
         } else {
           print("🔕 [UI-UX] Alertas inéditos chegaram, mas NENHUM passou nos filtros. Não tocaremos a sirene.");
         }
@@ -866,13 +896,20 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     );
   }
 
-  // 🚀 O GATILHO DE RETORNO (LIFECYCLE)
+ // 🚀 O GATILHO DE RETORNO (LIFECYCLE)
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       print("📱 App voltou para o primeiro plano! Sincronizando Silenciosamente...");
-      // 🚀 FORÇA A ATUALIZAÇÃO DO FEED, MAS SEM TOCAR A SIRENE DE NOVO!
-      _alertService.forceSync(silencioso: true); // Correção de sintaxe para _alertService
+      
+      // 🚀 LIGA O ABAFADOR POR 8 SEGUNDOS NO RESUME
+      _isAppRecemAberto = true;
+      Future.delayed(const Duration(seconds: 8), () {
+        if (mounted) _isAppRecemAberto = false;
+      });
+
+      // Busca as novidades na planilha
+      _alertService.forceSync(); 
     }
   }
 
@@ -995,21 +1032,21 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
                     ],
                   ),
                 )
-              // ListView.builder: Cria uma lista rolável que carrega apenas o que está visível.
-              // Analogia: Similar às Virtual Lists no React ou ao carregamento sob demanda no Web.
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _listaAlertasFiltrados.length,
-                  // O itemBuilder é chamado apenas para os itens que aparecem na tela.
-                  itemBuilder: (context, index) {
-                    final alerta = _listaAlertasFiltrados[index];
-                    return AlertCard(
-                      alerta: alerta,
-                      // 🚀 NOVO: AVISA O CARD SE ELE FOI O CLICADO
-                      isHighlighted: _highlightedTrecho != null && alerta.trecho.contains(_highlightedTrecho!),
-                    );
-                  },
-                ),
+            // ListView.builder: Cria uma lista rolável que carrega apenas o que está visível.
+            // Analogia: Similar às Virtual Lists no React ou ao carregamento sob demanda no Web.
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _listaAlertasFiltrados.length,
+                itemBuilder: (context, index) {
+                  final alerta = _listaAlertasFiltrados[index];
+                  return AlertCard(
+                    alerta: alerta,
+                    // 🚀 BLINDAGEM NO MATCH DO TEXTO
+                    isHighlighted: _highlightedTrecho != null && 
+                                   alerta.trecho.toUpperCase().contains(_highlightedTrecho!),
+                  );
+                },
+              ),
     );
   }
 }
@@ -1249,7 +1286,7 @@ void _abrirBalcao() async {
                   // Grid de Dados Extraídos (Metadados)
                                       // Envolva a Row com Padding
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0), // 👈 Aqui define a margem das duas pontas
+                    padding: const EdgeInsets.symmetric(horizontal: 9.0), // 👈 Aqui define a margem das duas pontas
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1520,7 +1557,7 @@ void _abrirBalcao() async {
                               elevation: 4,
                               shadowColor: AppTheme.amber.withOpacity(0.4),
                             ),
-                            icon: const Icon(Icons.local_atm_rounded, size: 20),
+                            icon: const Icon(Icons.verified_user_rounded, size: 20),
                             label: const Text("EMITIR COM FÃMILHASVIP", 
                               style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
                           ),
@@ -1549,7 +1586,7 @@ void _abrirBalcao() async {
           valor, 
           style: TextStyle(
             color: corExibicao, // 👈 Usa a nova variável de cor
-            fontSize: 13.5, 
+            fontSize: 12, 
             // Fica "gordinho" (w900) se não for branco, senão fica w700
             fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700,
           )
