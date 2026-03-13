@@ -30,10 +30,15 @@ final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterL
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
+  debugPrint("🚨 [FCM-BACKGROUND] ACORDOU O MOTOR INVISÍVEL! Dados recebidos: ${message.data}");
+
   final String action = message.data['action'] ?? '';
   final String tipo = message.data['tipo'] ?? '';
   
-  if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') return;
+  if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') {
+    debugPrint("🤷‍♂️ [FCM-BACKGROUND] Push ignorado (não é um alerta de passagem).");
+    return;
+  }
 
   final prefs = await SharedPreferences.getInstance();
   await prefs.reload();
@@ -43,11 +48,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final String trecho = message.data['trecho'] ?? '';
   final String detalhes = message.data['detalhes'] ?? '';
 
+  debugPrint("🔍 [FCM-RAIO-X] Analisando Voo: $programa | $trecho");
+  debugPrint("🧠 [FCM-CÉREBRO] Filtros Atuais -> Origens: ${filtros.origens} | Destinos: ${filtros.destinos}");
+  debugPrint("🔄 [FCM-RAIO-X] Contém 'VOLTA' nos detalhes? -> ${detalhes.toUpperCase().contains('VOLTA') ? 'SIM ✅' : 'NÃO ❌'}");
+
   // 1. Verifica filtros ANTES de gastar qualquer recurso
   if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
-    debugPrint("⛔ [FCM-PORTEIRO] Bloqueado pelos filtros.");
+    debugPrint("⛔ [FCM-PORTEIRO] BARRADO! O Voo não atende aos critérios geográficos/companhia do usuário.");
     return;
   }
+  debugPrint("✅ [FCM-PORTEIRO] APROVADO! O Voo passou no filtro da tela apagada.");
 
   // 2. Monta o objeto Alert COMPLETO do payload — sem usar a internet!
   final Alert novoAlerta = Alert.fromPush(message.data);
@@ -60,30 +70,44 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     try { return jsonDecode(raw)['id'] == novoAlerta.id; } catch (_) { return false; }
   });
 
-  if (!jaExiste) {
-    debugPrint("💾 [FCM] Salvando passagem no Cache Local: ${novoAlerta.trecho}");
-    cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
-    // Limita o histórico a 100 alertas para não lotar a memória do celular
-    await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
+  if (jaExiste) {
+    debugPrint("♻️ [FCM-CACHE] Descartado Silenciosamente. Este voo já existe no banco de dados local.");
+    return; // Para aqui, senão ele tocaria o som de novo pra algo velho!
   }
 
-  // 4. Toca a sirene dourada
-  final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
-  await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
-  final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-  await androidPlugin?.createNotificationChannel(
-    const AndroidNotificationChannel(
-      'emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
-    ),
-  );
+  debugPrint("💾 [FCM-CACHE] Salvando passagem INÉDITA no Cache Local...");
+  cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
+  // Limita o histórico a 100 alertas para não lotar a memória do celular
+  await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
 
-  await localNotif.show(
-    id: novoAlerta.id.hashCode, title: "✈️ Oportunidade: $programa", body: trecho,
-    notificationDetails: const NotificationDetails(
-      android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
-    ),
-    payload: trecho, // Rastreador para o Dourado
-  );
+  // 4. Toca a sirene dourada
+ debugPrint("🔔 [FCM-UX] Disparando Sirene Dourada e Notificação visual do Android...");
+  try {
+    final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin(); // <- Apenas UMA declaração
+    await localNotif.initialize(
+    settings: const InitializationSettings(          // ✅ 'settings' não 'initializationSettings'
+    android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+      ),
+    );
+    
+    final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
+      ),
+    );
+
+    await localNotif.show(
+      id: novoAlerta.id.hashCode, title: "✈️ Oportunidade: $programa", body: trecho,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
+      ),
+      payload: trecho, // Rastreador para o Dourado
+    );
+    debugPrint("✨ [FCM-UX] Notificação exibida com sucesso!");
+  } catch (e) {
+    debugPrint("❌ [FCM-UX] Erro fatal ao tentar exibir notificação nativa: $e");
+  }
 }
 
 /// Ponto de entrada do aplicativo.
@@ -104,38 +128,81 @@ void main() async {
         measurementId: 'G-Z2SHWPV2EZ',
       ),
     );
+    // ✅ NÃO pedimos permissão aqui — o app abre imediatamente
+    // A permissão e o token são pedidos em background depois do runApp()
   } else {
     await Firebase.initializeApp();
-  }
-
-  if (!kIsWeb) {
+    // ✅ Sem duplicata: removemos o segundo registro que estava fora do else
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
-  // 🚀 NOVO: Imprime o Token FCM para provarmos que a conexão deu certo!
-    try {
-      String? token = await FirebaseMessaging.instance.getToken();
-      print("🔥 FIREBASE CONECTADO! TOKEN FCM: $token");
-    } catch (e) {
-      print("⚠️ Erro ao buscar Token do Firebase: $e");
-    }
-
-  // 🚀 INICIALIZAÇÃO DAS NOTIFICAÇÕES
-  const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
-  const InitializationSettings initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
-  
-  await flutterLocalNotificationsPlugin.initialize(
-    settings: initializationSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) {
-      print("👆 [UX] O Usuário clicou na notificação! Payload recebido: ${response.payload}");
+  // ─── Notificações locais (só mobile) ──────────────────────────────────
+if (!kIsWeb) {
+    const AndroidInitializationSettings initAndroid =
+        AndroidInitializationSettings('@mipmap/launcher_icon');
+        
+    await flutterLocalNotificationsPlugin.initialize(
+      settings: const InitializationSettings(android: initAndroid),   // ✅ idem
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
       if (response.payload != null && response.payload!.isNotEmpty) {
-        // 🚀 O usuário clicou! Avisa o serviço para acender o Dourado!
+        AlertService().setPendingHighlight(response.payload!);
         AlertService().registrarToqueNotificacao(response.payload!);
       }
     },
   );
+}
 
+  // ─── App abre IMEDIATAMENTE ───────────────────────────────────────────
   runApp(const MilhasAlertApp());
+
+  // ─── Web: permissão e token em background, sem bloquear a UI ─────────
+  // unawaited() garante que roda em paralelo — o app já está na tela
+  if (kIsWeb) {
+    _configurarPushWeb();
+  }
+}
+
+/// Configura push web em background, após o app já estar renderizado.
+/// Separado em função própria para não poluir o main().
+Future<void> _configurarPushWeb() async {
+  try {
+    final messaging = FirebaseMessaging.instance;
+
+    final settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
+      print('❌ [WEB] Usuário recusou as notificações.');
+      return;
+    }
+
+    print('✅ [WEB] Permissão concedida!');
+
+    final String? webToken = await messaging.getToken(
+      vapidKey: "BOsesHNzz8UHyRwiJRZJfd8ZgeA4hmGi_JPDVPKxOXXDN4T92NHlQa4sSi0m-2K_WnS-aQFXmlolAOSsrgKHg8M",
+    );
+
+    if (webToken == null || webToken.isEmpty) {
+      print('⚠️ [WEB] Token gerado foi nulo.');
+      return;
+    }
+
+    print("🔥 [WEB] TOKEN FCM WEB: $webToken");
+
+    // Salva localmente para o AuthService usar no login
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('FCM_TOKEN_WEB', webToken);
+
+    // Se o usuário já está logado, registra o token na planilha agora
+    // O AuthService vai ler esse token ao fazer o próximo CHECK_DEVICE
+    print("💾 [WEB] Token salvo. Será enviado ao GAS no próximo login/sync.");
+
+  } catch (e) {
+    print("⚠️ [WEB] Erro ao configurar push web: $e");
+  }
 }
 
 // ==========================================
@@ -461,6 +528,33 @@ class _MainNavigatorState extends State<MainNavigator> with WidgetsBindingObserv
     const SmsScreen(),
   ];
 
+  // 🚀 A SUA FUNÇÃO BLINDADA ENTRA AQUI! 
+  // Repare que agora ela usa o flutterLocalNotificationsPlugin global do main.dart
+  // 🚀 FUNÇÃO BLINDADA COM OS PARÂMETROS NOMEADOS CORRETOS
+  Future<void> _tocarNotificacaoLocal({
+    required int idNotificacao, 
+    required String titulo,
+    required String corpo,
+    String? payload,
+  }) async {
+    await flutterLocalNotificationsPlugin.show(
+      id: idNotificacao,      // 👈 Faltava a etiqueta 'id:'
+      title: titulo,          // 👈 Faltava a etiqueta 'title:'
+      body: corpo,            // 👈 Faltava a etiqueta 'body:'
+      notificationDetails: const NotificationDetails( // 👈 Faltava a etiqueta
+        android: AndroidNotificationDetails(
+          'emissao_vip_v3',
+          'Emissões FãMilhasVIP',
+          importance: Importance.max,
+          priority: Priority.high,
+          sound: RawResourceAndroidNotificationSound('alerta'),
+          playSound: true,
+        ),
+      ),
+      payload: payload,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -473,9 +567,74 @@ class _MainNavigatorState extends State<MainNavigator> with WidgetsBindingObserv
         AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
 
     // 🚀 Chama a função de adaptação web/nativa
-    registerWebCloseListener(); 
+    registerWebCloseListener();
     alertService.startMonitoring();
 
+    // ══════════════════════════════════════════════════════════════════
+    // 🚀 HANDLER DE PUSH EM FOREGROUND (App está aberto na tela)
+    //
+    // IMPORTANTE: O _firebaseMessagingBackgroundHandler (definido no topo
+    // do arquivo) SÓ roda quando o app está em background ou fechado.
+    // Quando o app está ABERTO, o Firebase entrega o push aqui, no
+    // FirebaseMessaging.onMessage. Sem este listener, pushes em foreground
+    // seriam descartados silenciosamente.
+    //
+    // O que fazemos aqui (mesma lógica do background handler):
+    //   1. Verifica filtros do usuário
+    //   2. Monta o Alert.fromPush() com todos os dados do payload
+    //   3. Salva em SharedPreferences['ALERTS_CACHE_V2']
+    //   4. Mostra notificação local com som (o Android não exibe
+    //      automaticamente notificações FCM em foreground)
+    //   5. Chama carregarDoCache() para atualizar o feed na tela
+    // ══════════════════════════════════════════════════════════════════
+    if (!kIsWeb) {
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+        final String action = message.data['action'] ?? '';
+        final String tipo   = message.data['tipo']   ?? '';
+
+        if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') return;
+
+        final filtros  = await UserFilters.load();
+        final programa = message.data['programa'] ?? '';
+        final trecho   = message.data['trecho']   ?? '';
+        final detalhes = message.data['detalhes'] ?? '';
+
+        if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+          debugPrint("⛔ [FOREGROUND] Push bloqueado pelos filtros.");
+          return;
+        }
+
+        // Monta o Alert completo direto do payload — zero internet
+        final Alert novoAlerta = Alert.fromPush(message.data);
+
+        // Salva no cache local (mesmo slot que o background handler usa)
+        final prefs    = await SharedPreferences.getInstance();
+        final cacheRaw = prefs.getStringList('ALERTS_CACHE_V2') ?? [];
+
+        final jaExiste = cacheRaw.any((raw) {
+          try { return jsonDecode(raw)['id'] == novoAlerta.id; } catch (_) { return false; }
+        });
+
+        if (!jaExiste) {
+          cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
+          await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
+          debugPrint("💾 [FOREGROUND] Alert salvo no cache: ${novoAlerta.trecho}");
+        }
+
+        // 🚀 AQUI ENTRA A SUA FUNÇÃO LIMPA E REFATORADA!
+        // (o Android não exibe notificações FCM automáticas quando o app está aberto)
+        await _tocarNotificacaoLocal(
+          idNotificacao: novoAlerta.id.hashCode, // O ID infalível
+          titulo: "✈️ Oportunidade: $programa",
+          corpo: trecho,
+          payload: trecho, // rastreador para o efeito Dourado
+        );
+
+        // Atualiza o feed da tela lendo do cache (sem HTTP)
+        alertService.carregarDoCache();
+        debugPrint("✅ [FOREGROUND] Feed atualizado via cache.");
+      });
+    }
   }
 
   @override
@@ -523,7 +682,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   bool _isCarregando = true;
   
   UserFilters _filtros = UserFilters();
-
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   // 🚀 1. VARIÁVEL DO SOM
@@ -543,32 +701,52 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     _verificarNotificacaoDeAbertura(); 
   }
 
-  // 🚀 NOVO: OUVINTE DE CLIQUES (BACKGROUND E FOREGROUND)
+  // OUVINTE DE CLIQUES (BACKGROUND E FOREGROUND)
   void _verificarNotificacaoDeAbertura() async {
-    // 1. Caso o app estava fechado e abriu pelo clique
-    final details = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
-    if (details != null && details.didNotificationLaunchApp && details.notificationResponse?.payload != null) {
-       _ativarBlurDourado(details.notificationResponse!.payload!);
+    // ── CASO 1: Cold Start ────────────────────────────────────────────────
+    // App estava COMPLETAMENTE FECHADO e abriu pelo clique na notificação.
+    // Não usamos mais o delay de 800ms (frágil). Em vez disso, guardamos
+    // o trecho no AlertService. Quando os cards carregarem via stream,
+    // o listener consome o pending e ativa o dourado com segurança.
+    try {
+      final details = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
+      if (details != null &&
+          details.didNotificationLaunchApp &&
+          details.notificationResponse?.payload != null) {
+        final payload = details.notificationResponse!.payload!;
+        print("👆 [UX-COLD] Cold Start detectado! Guardando pending: $payload");
+        _alertService.setPendingHighlight(payload);
+        // NÃO chamamos _ativarBlurDourado aqui — a lista pode estar vazia ainda.
+        // O listener da stream vai consumir quando os cards chegarem (veja _iniciarMotorDeTracao).
+      }
+    } catch (e) {
+      print("⚠️ [UX-COLD] Erro ao ler getNotificationAppLaunchDetails: $e");
     }
 
-    // 2. Caso o app já estava aberto (minimizou) e o usuário clicou
+    // ── CASO 2: Warm Start ────────────────────────────────────────────────
+    // App estava em background e o usuário clicou. O onDidReceiveNotificationResponse
+    // já chamou setPendingHighlight + registrarToqueNotificacao.
+    // O tapStream é um backup para garantir que o dourado acende imediatamente
+    // caso a lista já esteja populada neste momento.
     _alertService.tapStream.listen((trechoClicado) {
-       _ativarBlurDourado(trechoClicado);
+      print("👆 [UX-WARM] Tap recebido via stream: $trechoClicado");
+      _ativarBlurDourado(trechoClicado);
     });
   }
 
- // 🚀 NOVO: ATIVA O DOURADO E DESLIGA DEPOIS DE 15 SEGUNDOS
+// 🚀 ATIVA O DOURADO E DESLIGA DEPOIS DE 15 SEGUNDOS
   void _ativarBlurDourado(String trecho) {
     if (mounted) {
-      print("✨ [UI-UX] Preparando o Dourado VIP para: $trecho");
+      // Limpa os espaços e deixa maiúsculo para a comparação não falhar
+      String trechoLimpo = trecho.trim().toUpperCase();
+      print("✨ [UI-UX] Preparando o Dourado VIP para o trecho limpo: [$trechoLimpo]");
       
-      setState(() => _highlightedTrecho = trecho.toUpperCase()); // 🚀 Padroniza
+      setState(() => _highlightedTrecho = trechoLimpo); 
       
-      // 🚀 AUMENTAMOS PARA 15 SEGUNDOS!
-      // Assim dá tempo da internet baixar os dados do GAS tranquilamente
+      // Assim dá tempo da internet baixar os dados do GAS tranquilamente (se fosse o caso)
       Future.delayed(const Duration(seconds: 15), () {
         if (mounted) {
-          print("✨ [UI-UX] Apagando o Dourado VIP (Tempo expirado).");
+          print("✨ [UI-UX] Apagando o Dourado VIP (Tempo de 15s expirado).");
           setState(() => _highlightedTrecho = null);
         }
       });
@@ -651,6 +829,20 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           _aplicarFiltrosNaTela(); 
           _isCarregando = false;
         });
+
+        // ── DOURADO PÓS-RENDER ───────────────────────────────────────────
+        // Após o setState acima redesenhar a lista, verifica se há um
+        // "pending highlight" guardado no AlertService (pode ter sido
+        // registrado por um clique em notificação antes dos cards chegarem).
+        // addPostFrameCallback garante que os widgets já existem na tela
+        // antes de ativarmos o dourado — sem race condition de timing.
+        final pendingHighlight = _alertService.consumePendingHighlight();
+        if (pendingHighlight != null) {
+          print("✨ [UI-MOTOR] Consumindo pending highlight: $pendingHighlight");
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _ativarBlurDourado(pendingHighlight);
+          });
+        }
 
       }
     });
@@ -838,7 +1030,7 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
                     alerta: alerta,
                     // 🚀 BLINDAGEM NO MATCH DO TEXTO
                     isHighlighted: _highlightedTrecho != null && 
-                                   alerta.trecho.toUpperCase().contains(_highlightedTrecho!),
+                                   alerta.trecho.toUpperCase().trim().contains(_highlightedTrecho!),
                   );
                 },
               ),
@@ -1081,7 +1273,7 @@ void _abrirBalcao() async {
                   // Grid de Dados Extraídos (Metadados)
                                       // Envolva a Row com Padding
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 9.0), // 👈 Aqui define a margem das duas pontas
+                    padding: const EdgeInsets.symmetric(horizontal: 2.5), // 👈 Aqui define a margem das duas pontas
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1245,7 +1437,7 @@ void _abrirBalcao() async {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16), // Espaçamento entre o grid e a descrição
+                  const SizedBox(height: 0.5), // Espaçamento entre o grid e a descrição
 
                   Container(
                       height: 175, // Altura fixa e compacta
@@ -1322,7 +1514,7 @@ void _abrirBalcao() async {
                             foregroundColor: AppTheme.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             elevation: 4,
-                            shadowColor: AppTheme.muted.withOpacity(0.4),
+                            shadowColor: AppTheme.green.withOpacity(0.4),
                           ),
                           icon: const Icon(Icons.local_atm_rounded, size: 20),
                           label: const Text("EMITIR NO BALCÃO", 
@@ -1333,7 +1525,7 @@ void _abrirBalcao() async {
 
                     // Botão 3: EMITIR COM FÃMILHASVIP (Novo)
                     Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.only(top: 8),
                       child: SizedBox(
                         width: double.infinity,
                         height: 45,
@@ -1381,7 +1573,7 @@ void _abrirBalcao() async {
           valor, 
           style: TextStyle(
             color: corExibicao, // 👈 Usa a nova variável de cor
-            fontSize: 12, 
+            fontSize: 11.5, 
             // Fica "gordinho" (w900) se não for branco, senão fica w700
             fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700,
           )

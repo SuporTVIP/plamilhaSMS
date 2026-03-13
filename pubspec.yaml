@@ -1,21 +1,7 @@
 name: PlamilhaSVIP
 description: "A new Flutter project."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
 version: 0.1.0+1
 
 environment:
@@ -25,60 +11,41 @@ dependencies:
   flutter:
     sdk: flutter
   
-  # Rede e Conexão (Legado reaproveitado)
-  http: ^1.2.0              # Para fazer requisições HTTP (Analogia: axios no JS)
-  dio: ^5.4.0               # Cliente HTTP potente para downloads e interceptores
-  uuid: ^4.3.3              # Gera IDs únicos (Analogia: uuid v4 no Node.js)
-  shared_preferences: ^2.2.0 # Armazenamento simples chave-valor (Analogia: localStorage)
-  firebase_messaging: ^16.1.1 # Para receber notificações push (Fase 4)
-  firebase_core: ^4.4.0     # Núcleo do Firebase para inicialização
+  http: ^1.2.0
+  dio: ^5.4.0
+  uuid: ^4.3.3
+  shared_preferences: ^2.2.0
+  firebase_messaging: ^16.1.1
+  firebase_core: ^4.4.0
   
-  # Novo Roadmap - UI e Funcionalidades
-  webview_flutter: ^4.7.0    # Permite exibir sites dentro do app (Analogia: <iframe>)
-  audioplayers: ^6.0.0       # Para tocar sons de alerta (Fase 4)
-  workmanager: ^0.9.0+3     # Executa tarefas em segundo plano (Analogia: Cron jobs ou Service Workers)  
-  # UI
-  google_fonts: ^8.0.2       # Facilita o uso de fontes customizadas do Google Fonts
-  flutter_animate: ^4.5.0    # Biblioteca poderosa para animações encadeadas
+  webview_flutter: ^4.7.0
+  audioplayers: ^6.0.0
+  # ❌ workmanager removido — substituído pela arquitetura 100% Push via FCM
 
-  url_launcher: ^6.3.0       # Abre links no navegador externo ou outros apps
-
-  flutter_local_notifications: ^20.1.0 # Exibe notificações nativas no Android/iOS
-
-  hive: ^2.2.3 # Banco de dados local leve e rápido (Analogia: IndexedDB ou SQLite)
-  hive_flutter: ^1.1.0 # Extensão para integração do Hive com Flutter
+  google_fonts: ^8.0.2
+  flutter_animate: ^4.5.0
+  url_launcher: ^6.3.0
+  flutter_local_notifications: ^20.1.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
   permission_handler: ^12.0.1
   font_awesome_flutter: ^11.0.0
-
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
   flutter_lints: ^6.0.0
-
   flutter_launcher_icons: ^0.14.4
 
-# Configuração para o gerador de ícone de lançador.
-# Deve ficar na raiz do YAML, com a chave `flutter_icons`.
 flutter_icons:
   android: "launcher_icon"
   ios: false
   image_path: "assets/images/logo.png"
-  min_sdk_android: 21 # deve bater com o seu build.gradle
+  min_sdk_android: 21
 
-# The following section is specific to Flutter packages.
 flutter:
   uses-material-design: true
-
   assets:
-     - assets/sounds/ # Sons para alertas (moved under lib)
+     - assets/sounds/
      - assets/sounds/intro.mp3
-     - assets/images/   # Imagens usadas na UI, como ícones e backgrounds
-
-
+     - assets/images/

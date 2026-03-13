@@ -1,241 +1,253 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/alert.dart';
 import 'cache_service.dart';
 import 'discovery_service.dart';
-import 'filter_service.dart';
 
+/// Serviço de alertas — Arquitetura 100% Push
+///
+/// COMO FUNCIONA:
+/// 1. O Google Apps Script envia um FCM Data Message com o Alert COMPLETO (≈1.8KB < limite de 4KB).
+/// 2. O _firebaseMessagingBackgroundHandler (main.dart) recebe o push, valida filtros,
+///    salva o Alert em SharedPreferences['ALERTS_CACHE_V2'] e dispara a notificação.
+/// 3. Quando o app abre (resumed ou foreground), ele chama carregarDoCache() que lê
+///    o SharedPreferences e emite os alertas pela alertStream — sem nenhuma chamada HTTP.
+/// 4. Na primeira instalação (cache vazio), forceSync() faz UMA única chamada HTTP para
+///    popular o histórico inicial. Depois disso, nunca mais precisa da internet para alertas.
 class AlertService {
+  // ── Singleton ─────────────────────────────────────────────────────────────
   static final AlertService _instancia = AlertService._interno();
   factory AlertService() => _instancia;
   AlertService._interno();
 
-  bool _isFirstFetch = true;
+  // ── Constantes ────────────────────────────────────────────────────────────
+  static const String _keyCacheV2     = 'ALERTS_CACHE_V2';
+  static const String _keySyncInicial = 'SYNC_INICIAL_FEITA';
+  static const String _keyLastSync    = 'LAST_ALERT_SYNC_V2';
 
-  static const String _keyLastSync = "LAST_ALERT_SYNC_V2";
-  static const int _maxIdsInMemory = 2000;
+  // ── Dependências ──────────────────────────────────────────────────────────
+  final CacheService _cache           = CacheService();
+  final DiscoveryService _discovery   = DiscoveryService();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
-  final CacheService _cache = CacheService();
-  final DiscoveryService _discovery = DiscoveryService();
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
-  
+  // ── Estado interno ────────────────────────────────────────────────────────
   bool _notificationsInitialized = false;
+  bool _monitoringStarted        = false;
   DateTime? _lastSyncTime;
-  Timer? _timer;
-  bool _isPolling = false;
-  bool _isFetching = false;
+  bool _isFetching               = false; // guarda apenas o forceSync inicial
 
-  final Set<String> _knownIds = {};
-  final StreamController<List<Alert>> _alertController = StreamController<List<Alert>>.broadcast();
-  
-  // 🚀 O NOVO RASTREADOR DE CLIQUES EM NOTIFICAÇÕES
-  final StreamController<String> _tapController = StreamController<String>.broadcast();
+  // ── Destaque Dourado ──────────────────────────────────────────────────────
+  // Guarda o trecho que deve piscar em dourado quando os cards carregarem.
+  // Valor ESTÁVEL (não um stream): sobrevive a qualquer race condition de timing.
+  // Se os cards chegam antes do clique → o trecho já está guardado.
+  // Se o clique chega antes dos cards → o trecho fica aqui até eles chegarem.
+  String? _pendingHighlightTrecho;
+
+  void setPendingHighlight(String trecho) {
+    _pendingHighlightTrecho = trecho.trim().toUpperCase();
+    print("✨ [SERVICE] Dourado pendente guardado: $_pendingHighlightTrecho");
+  }
+
+  /// Retorna e LIMPA o trecho pendente (consome uma única vez).
+  String? consumePendingHighlight() {
+    final valor = _pendingHighlightTrecho;
+    _pendingHighlightTrecho = null;
+    return valor;
+  }
+
+  // ── Streams públicas ──────────────────────────────────────────────────────
+
+  /// Stream de alertas: emite listas de novos alertas para a UI desenhar.
+  final StreamController<List<Alert>> _alertController =
+      StreamController<List<Alert>>.broadcast();
+  Stream<List<Alert>> get alertStream => _alertController.stream;
+
+  /// Stream de toque em notificação: emite o trecho clicado para acender o Dourado.
+  final StreamController<String> _tapController =
+      StreamController<String>.broadcast();
   Stream<String> get tapStream => _tapController.stream;
   void registrarToqueNotificacao(String payload) => _tapController.add(payload);
 
-  Stream<List<Alert>> get alertStream => _alertController.stream;
-
+  // ── Label da AppBar ───────────────────────────────────────────────────────
   String get lastSyncLabel {
-    if (_lastSyncTime == null) return 'Não sincronizado';
+    if (_lastSyncTime == null) return 'Aguardando push...';
     final diff = DateTime.now().difference(_lastSyncTime!);
-    if (diff.inMinutes < 1) return 'Agora mesmo';
+    if (diff.inMinutes < 1)  return 'Agora mesmo';
     if (diff.inMinutes < 60) return 'Há ${diff.inMinutes} min';
     return 'Há ${diff.inHours}h';
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // INICIALIZAÇÃO
+  // ══════════════════════════════════════════════════════════════════════════
+
   Future<void> _initNotifications() async {
     if (_notificationsInitialized) return;
-    const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const AndroidInitializationSettings androidInit =
+        AndroidInitializationSettings('@mipmap/launcher_icon');
     const DarwinInitializationSettings iosInit = DarwinInitializationSettings();
-    const InitializationSettings initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
+    const InitializationSettings initSettings =
+        InitializationSettings(android: androidInit, iOS: iosInit);
     await _localNotifications.initialize(settings: initSettings);
     _notificationsInitialized = true;
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // PONTO DE ENTRADA PÚBLICO — chamado pelo MainNavigator
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Inicia o monitoramento.
+  ///
+  /// Na arquitetura 100% Push, "monitorar" significa apenas ler o cache local
+  /// que o background push handler preenche. Não há polling, não há timers.
   void startMonitoring() async {
-    if (_isPolling) return;
+    if (_monitoringStarted) return;
+    _monitoringStarted = true;
+
     await _initNotifications();
     await _cache.init();
 
-    final cachedAlerts = _cache.loadAlerts();
-    if (cachedAlerts.isNotEmpty) {
-      final hoje = DateTime.now();
-      final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
-      final alertasDeHoje = cachedAlerts.where((a) => a.data.isAfter(inicioDoDia)).toList();
-
-      if(alertasDeHoje.isNotEmpty) {
-        _knownIds.addAll(alertasDeHoje.map((a) => a.id));
-        _alertController.add(alertasDeHoje);
-      }
-    }
-    _isPolling = true;
-    _scheduleNextPoll();
+    // Carrega o cache local (preenchido pelos pushes FCM anteriores)
+    await carregarDoCache();
   }
 
   void stopMonitoring() {
-    _timer?.cancel();
-    _isPolling = false;
+    _monitoringStarted = false;
   }
 
-  // 🚀 AGORA ELE ACEITA O COMANDO "SILENCIOSO" PARA NÃO DAR DUPLO APITO
-  Future<void> forceSync({bool silencioso = false}) async {
-    print("🔔 Sincronização forçada iniciada (Silencioso: $silencioso)...");
-    final config = await _discovery.getConfig();
-    if (config != null && config.gasUrl.isNotEmpty) {
-      await _checkNewAlerts(config.gasUrl, silencioso: silencioso);
-    }
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  // CARGA DO CACHE LOCAL — O CORAÇÃO DA NOVA ARQUITETURA
+  // ══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _scheduleNextPoll() async {
-    if (!_isPolling) return;
-    final config = await _discovery.getConfig();
-    if (config == null || !config.isActive) {
-      _timer = Timer(const Duration(seconds: 60), _scheduleNextPoll);
+  /// Carrega alertas do SharedPreferences['ALERTS_CACHE_V2'].
+  ///
+  /// Este cache é preenchido pelo FCM Handler (main.dart)
+  /// cada vez que um push com dados completos chega.
+  ///
+  /// ⚠️ EXCEÇÃO WEB: No web não existe background push handler.
+  /// O ALERTS_CACHE_V2 nunca é atualizado automaticamente, então
+  /// no web sempre executamos forceSync para buscar dados frescos.
+  Future<void> carregarDoCache() async {
+    print("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...");
+
+    // ── WEB: sem handler de background, deve sempre buscar via HTTP ──────────
+    if (kIsWeb) {
+      print("🌐 [SERVICE] Web detectado. Sempre sincroniza via HTTP para dados frescos.");
+      await forceSync(silencioso: true);
       return;
     }
-    await _checkNewAlerts(config.gasUrl, silencioso: false);
-    _timer = Timer(Duration(seconds: config.currentPollingInterval), _scheduleNextPoll);
-  }
 
-  Future<void> _checkNewAlerts(String gasUrl, {bool silencioso = false}) async {
-    if (_isFetching) return;
-    _isFetching = true;
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String(); 
-
-      final uriBase = Uri.parse(gasUrl);
-      final uriFinal = uriBase.replace(queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
-
-      final response = await http.get(uriFinal).timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200 && response.body.trim().startsWith('{')) {
-        final body = jsonDecode(response.body);
-
-        if (body['status'] == 'success') {
-          final List<dynamic> rawData = body['data'];
-
-          if (rawData.isNotEmpty) {
-            final List<Alert> alertsFromServer = rawData.map((j) => Alert.fromJson(j)).toList();
-            final hoje = DateTime.now();
-            final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
-
-            final List<Alert> newAlerts = alertsFromServer.where((a) {
-              bool isNew = !_knownIds.contains(a.id);
-              bool isToday = a.data.isAfter(inicioDoDia);
-              return isNew && isToday;
-            }).toList();
-
-            if (newAlerts.isNotEmpty) {
-              _knownIds.addAll(newAlerts.map((a) => a.id));
-              _alertController.add(newAlerts); 
-              _lastSyncTime = DateTime.now();
-
-              final existingInCache = _cache.loadAlerts();
-              _cache.saveAlerts([...newAlerts, ...existingInCache]);
-              _limparCacheSeNecessario();
-
-              // 🚀 SE O APP ACABOU DE ABRIR (SILENCIOSO), ELE ATUALIZA O FEED MAS NÃO APITA!
-              if (_isFirstFetch || silencioso) {
-                _isFirstFetch = false;
-              } else {
-                _processarFiltrosENotificar(newAlerts, prefs);
-              }
-            }
-            if (body['serverTime'] != null) await prefs.setString(_keyLastSync, body['serverTime']);
-          }
-        }
-      }
-    } catch (e) {
-      print("⚠️ Erro na sincronização: $e");
-    } finally {
-      _isFetching = false;
-    }
-  }
-
-  Future<void> _processarFiltrosENotificar(List<Alert> ineditos, SharedPreferences prefs) async {
-    await prefs.reload();
-    final filtros = await UserFilters.load();
-
-    List<Alert> aprovados = ineditos.where((alerta) => filtros.alertaPassaNoFiltro(alerta)).toList();
-
-    if (aprovados.isNotEmpty) {
-      if (aprovados.length == 1) {
-        _tocarNotificacaoLocal(
-          titulo: "✈️ Oportunidade: ${aprovados.first.programa}",
-          corpo: aprovados.first.trecho,
-          payload: aprovados.first.trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
-        );
-      } else {
-        _tocarNotificacaoLocal(
-          titulo: "🚨 Radar VIP Atualizado",
-          corpo: "Encontramos ${aprovados.length} novas passagens dentro dos seus filtros!",
-          payload: "MULTIPLOS",
-        );
-      }
-    }
-  }
-
-  Future<void> _tocarNotificacaoLocal({required String titulo, required String corpo, String? payload}) async {
-    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'emissao_vip_v3', 
-      'Emissões FãMilhasVIP',
-      importance: Importance.max,
-      priority: Priority.high,
-      sound: const RawResourceAndroidNotificationSound('alerta'), 
-      playSound: true, 
-    );
-
-    final NotificationDetails platformDetails = NotificationDetails(android: androidDetails);
-
-    await _localNotifications.show(
-     id: DateTime.now().millisecond, // 🚀 Colocamos a etiqueta 'id:'
-      title: titulo,                  // 🚀 Etiqueta 'title:'
-      body: corpo,                    // 🚀 Etiqueta 'body:'
-      notificationDetails: platformDetails, // 🚀 Etiqueta 'notificationDetails:'
-      payload: payload, // Esse aqui já estava com etiqueta!
-    );
-  }
-
-  /// 🚀 NOVA ARQUITETURA 100% PUSH
-  /// Carrega alertas do cache local preenchido pelo push FCM. Não faz chamada de rede HTTP.
-  Future<void> carregarDoCache() async {
-    print("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet!)...");
+    // ── MOBILE: lê do cache preenchido pelos pushes FCM ─────────────────────
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
-    
-    final List<String> cacheRaw = prefs.getStringList('ALERTS_CACHE_V2') ?? [];
+
+    final List<String> cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
 
     if (cacheRaw.isEmpty) {
-      // Se o cache estiver vazio (primeira vez que o usuário instalou o app), faz um sync inicial
-      final bool jaTeveSyncInicial = prefs.getBool('SYNC_INICIAL_FEITA') ?? false;
+      // Cache vazio = primeira instalação. Faz UMA sync HTTP e nunca mais.
+      final bool jaTeveSyncInicial = prefs.getBool(_keySyncInicial) ?? false;
       if (!jaTeveSyncInicial) {
-        print("🌐 [SERVICE] Primeira instalação detectada. Fazendo download inicial...");
-        await forceSync(silencioso: true); // O ÚNICO HTTP PERMITIDO!
-        await prefs.setBool('SYNC_INICIAL_FEITA', true);
+        print("🌐 [SERVICE] Primeira instalação. Fazendo download inicial único...");
+        await forceSync(silencioso: true); // HTTP estritamente silencioso
+        await prefs.setBool(_keySyncInicial, true);
       }
       return;
     }
 
-    // Lê do cache e manda pra tela
+    // Desserializa os alertas do cache
     final List<Alert> alertasDoCache = cacheRaw.map((raw) {
-      try { return Alert.fromJson(jsonDecode(raw)); } catch (_) { return null; }
+      try {
+        return Alert.fromJson(jsonDecode(raw));
+      } catch (_) {
+        return null;
+      }
     }).whereType<Alert>().toList();
 
     if (alertasDoCache.isNotEmpty) {
+      _lastSyncTime = DateTime.now();
       _alertController.add(alertasDoCache);
+      print("✅ [SERVICE] ${alertasDoCache.length} alertas emitidos do cache local.");
     }
   }
 
-  void _limparCacheSeNecessario() {
-    if (_knownIds.length > _maxIdsInMemory) {
-      final List<String> currentList = _knownIds.toList();
-      _knownIds.clear();
-      _knownIds.addAll(currentList.skip(currentList.length - 1000));
+  // ══════════════════════════════════════════════════════════════════════════
+  // SYNC FORÇADO VIA HTTP — Apenas para primeira instalação
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /// Busca alertas via HTTP no Google Apps Script.
+  /// Só é usado 1 vez na vida (ou se o usuário forçar via algum botão futuro).
+  Future<void> forceSync({bool silencioso = true}) async {
+    if (_isFetching) return;
+    _isFetching = true;
+    print("🌐 [SERVICE] forceSync() HTTP iniciado...");
+
+    try {
+      final config = await _discovery.getConfig();
+      if (config == null || config.gasUrl.isEmpty) return;
+
+      final lastSyncStr =
+          DateTime.now().subtract(const Duration(hours: 48)).toIso8601String();
+      final uri = Uri.parse(config.gasUrl).replace(
+          queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
+
+      final response =
+          await http.get(uri).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200 ||
+          !response.body.trim().startsWith('{')) return;
+
+      final body = jsonDecode(response.body);
+      if (body['status'] != 'success') return;
+
+      final List<dynamic> rawData = body['data'] ?? [];
+      if (rawData.isEmpty) return;
+
+      final hoje        = DateTime.now();
+      final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
+
+      final List<Alert> alertsFromServer = rawData
+          .map((j) => Alert.fromJson(j))
+          .where((a) => a.data.isAfter(inicioDoDia))
+          .toList();
+
+      if (alertsFromServer.isEmpty) return;
+
+      // Salva no ALERTS_CACHE_V2 para unificar com os alertas de push
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> cacheAtual =
+          prefs.getStringList(_keyCacheV2) ?? [];
+      final idsNoCache = cacheAtual.map((raw) {
+        try { return jsonDecode(raw)['id'] as String; } catch (_) { return ''; }
+      }).toSet();
+
+      final novos = alertsFromServer
+          .where((a) => !idsNoCache.contains(a.id))
+          .toList();
+
+      if (novos.isNotEmpty) {
+        final novosSerializados = novos.map((a) => jsonEncode(a.toJson())).toList();
+        final cacheAtualizado = [...novosSerializados, ...cacheAtual].take(100).toList();
+        await prefs.setStringList(_keyCacheV2, cacheAtualizado);
+        print("💾 [SERVICE] forceSync salvou ${novos.length} alertas no cache.");
+      }
+
+      // Emite para a UI silenciosamente (Sem apitar!)
+      _lastSyncTime = DateTime.now();
+      _alertController.add(alertsFromServer);
+
+      if (body['serverTime'] != null) {
+        await (await SharedPreferences.getInstance())
+            .setString(_keyLastSync, body['serverTime']);
+      }
+    } catch (e) {
+      print("⚠️ [SERVICE] Erro no forceSync: $e");
+    } finally {
+      _isFetching = false;
     }
   }
 }

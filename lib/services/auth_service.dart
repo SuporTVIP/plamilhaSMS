@@ -114,12 +114,17 @@ class AuthService {
     final String deviceId = await getDeviceId();
     final String fcmToken = await _obterFcmToken();
 
+    // 🚀 LENDO O TOKEN DA WEB (Que foi salvo no main.dart)
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String fcmTokenWeb = prefs.getString('FCM_TOKEN_WEB') ?? "";
+
     final Map<String, dynamic> payload = {
       "action": "CHECK_DEVICE",
       "email": email,
       "deviceId": deviceId,
       "fcmToken": fcmToken,
       "token": token,
+      "fcmTokenWeb": fcmTokenWeb, // 🚀 Enviando o token web para o servidor
     };
 
     try {
