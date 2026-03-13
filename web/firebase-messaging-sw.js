@@ -13,109 +13,68 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RECEPÇÃO DA NOTIFICAÇÃO
-// Usamos o evento 'push' NATIVO como fonte de verdade.
-// É mais confiável que onBackgroundMessage porque dispara SEMPRE,
-// independente de o GAS mandar o campo 'notification' ou não.
-// O onBackgroundMessage do Firebase fica como fallback de compatibilidade.
+// RECEPÇÃO DA NOTIFICAÇÃO (APENAS O NATIVO)
 // ─────────────────────────────────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   if (!event.data) return;
 
   let data = {};
   try {
-    // FCM envolve o payload numa chave 'data' dentro do JSON do push
     const json = event.data.json();
-    data = json.data ?? json; // suporta ambos os formatos
+    data = json.data ?? json;
   } catch (_) {
-    return; // payload malformado — ignora
+    return;
   }
+
+  if (data.action !== 'SYNC_ALERTS') return;
 
   const programa = data.programa ?? 'Oportunidade VIP';
   const trecho = data.trecho ?? 'Nova emissão encontrada!';
   const id = data.id ?? `alerta-${Date.now()}`;
-
-  // Só mostra se for um alerta válido do sistema
-  if (data.action !== 'SYNC_ALERTS') return;
 
   event.waitUntil(
     self.registration.showNotification(`✈️ ${programa}`, {
       body: trecho,
       icon: '/icons/Icon-192.png',
       badge: '/icons/Icon-192.png',
-      tag: id,       // evita empilhar a mesma emissão
-      renotify: true,     // vibra mesmo se substituir uma com mesmo tag
-      requireInteraction: false,
-      data: data,     // payload completo viaja com a notificação
-    })
-  );
-});
-
-// Fallback Firebase SDK — cobre casos onde o push chega via FCM SDK diretamente
-messaging.onBackgroundMessage((payload) => {
-  // O evento 'push' acima já tratou — só age se ele não mostrou nada
-  // (self.registration.getNotifications verifica se já há uma com esse tag)
-  const data = payload.data ?? {};
-  const id = data.id ?? `alerta-${Date.now()}`;
-
-  event?.waitUntil?.(
-    self.registration.getNotifications({ tag: id }).then((existing) => {
-      if (existing.length > 0) return; // push nativo já exibiu, não duplica
-
-      const programa = data.programa ?? 'Oportunidade VIP';
-      const trecho = data.trecho ?? 'Nova emissão encontrada!';
-
-      return self.registration.showNotification(`✈️ ${programa}`, {
-        body: trecho,
-        icon: '/icons/Icon-192.png',
-        badge: '/icons/Icon-192.png',
-        tag: id,
-        data: data,
-      });
+      tag: id,
+      renotify: true,
+      data: data,
     })
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CLIQUE NA NOTIFICAÇÃO → abre o app E passa o trecho para o blur dourado
+// CLIQUE NA NOTIFICAÇÃO → Foca a aba ou abre nova
 // ─────────────────────────────────────────────────────────────────────────────
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
+  event.notification.close(); // Fecha o balãozinho do Windows
 
   const data = event.notification.data ?? {};
   const trecho = data.trecho ?? '';
 
-  // URL base do app. Se o trecho existir, passa como query param
-  // para o Flutter ler no cold start (quando nenhuma aba está aberta).
-  const urlBase = new URL('/', self.location.origin).href;
-  const urlComTrecho = trecho
-    ? `${urlBase}?highlight=${encodeURIComponent(trecho)}`
-    : urlBase;
+  const origin = self.location.origin;
+  // Monta a URL. Se tiver trecho, empacota na URL
+  const urlComTrecho = trecho ? `${origin}/?highlight=${encodeURIComponent(trecho)}` : `${origin}/`;
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then((windowClients) => {
-
-        // Tenta encontrar uma aba do app já aberta (qualquer rota)
-        const abaAberta = windowClients.find(
-          (c) => c.url.startsWith(self.location.origin)
-        );
-
-        if (abaAberta) {
-          // Aba já existe: foca e manda postMessage com o trecho
-          // O Flutter escuta via window.onMessage e chama setPendingHighlight
-          return abaAberta.focus().then(() => {
-            if (trecho) {
-              abaAberta.postMessage({
-                type: 'PLAMILHAS_HIGHLIGHT',
-                trecho: trecho,
-              });
-            }
-          });
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // 1. Tenta achar a aba do sistema já aberta
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url.startsWith(origin) && 'focus' in client) {
+          client.focus(); // Traz a aba pra frente
+          if (trecho) {
+            client.postMessage({ type: 'PLAMILHAS_HIGHLIGHT', trecho: trecho });
+          }
+          return;
         }
+      }
 
-        // Nenhuma aba aberta: abre nova passando o trecho na URL
+      // 2. Se a aba não existe (fechada), abre do zero com o trecho na URL
+      if (clients.openWindow) {
         return clients.openWindow(urlComTrecho);
-      })
+      }
+    })
   );
 });
