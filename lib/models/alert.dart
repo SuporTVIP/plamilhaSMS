@@ -141,6 +141,29 @@ class Alert {
     );
   }
 
+  /// Lê um Alert completo diretamente do payload FCM.
+  /// Não faz nenhuma chamada de rede. Os dados já vieram no push.
+  factory Alert.fromPush(Map<String, dynamic> data) {
+    return Alert(
+      id: data['id']?.toString() ?? 'FCM_${DateTime.now().millisecondsSinceEpoch}',
+      mensagem: data['mensagem']?.toString() ?? '',
+      programa: data['programa']?.toString() ?? 'Desconhecido',
+      data: DateTime.tryParse(data['data']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
+      link: data['link']?.toString(),
+      trecho: data['trecho']?.toString() ?? 'N/A',
+      dataIda: _padronizarData(data['data_ida']?.toString() ?? 'N/A'),
+      dataVolta: _padronizarData(data['data_volta']?.toString() ?? 'N/A'),
+      milhas: data['milhas']?.toString() ?? 'N/A',
+      valorFabricado: data['valor_fabricado']?.toString() ?? 'N/A',
+      valorEmissao: data['valor_emissao']?.toString() ?? 'N/A',
+      valorBalcao: data['valor_balcao']?.toString() ?? 'N/A',
+      detalhes: data['detalhes']?.toString() ?? '',
+      link_agencia: data['link_agencia']?.toString() ?? 'N/A',
+      mensagemBalcao: data['mensagem_balcao']?.toString() ?? 'N/A',
+      taxas: data['taxas']?.toString() ?? 'N/A',
+    );
+  }
+
   /// Converte a instância de [Alert] em um mapa JSON para persistência local.
   Map<String, dynamic> toJson() {
     return {

@@ -201,6 +201,36 @@ class AlertService {
     );
   }
 
+  /// 🚀 NOVA ARQUITETURA 100% PUSH
+  /// Carrega alertas do cache local preenchido pelo push FCM. Não faz chamada de rede HTTP.
+  Future<void> carregarDoCache() async {
+    print("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet!)...");
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    
+    final List<String> cacheRaw = prefs.getStringList('ALERTS_CACHE_V2') ?? [];
+
+    if (cacheRaw.isEmpty) {
+      // Se o cache estiver vazio (primeira vez que o usuário instalou o app), faz um sync inicial
+      final bool jaTeveSyncInicial = prefs.getBool('SYNC_INICIAL_FEITA') ?? false;
+      if (!jaTeveSyncInicial) {
+        print("🌐 [SERVICE] Primeira instalação detectada. Fazendo download inicial...");
+        await forceSync(silencioso: true); // O ÚNICO HTTP PERMITIDO!
+        await prefs.setBool('SYNC_INICIAL_FEITA', true);
+      }
+      return;
+    }
+
+    // Lê do cache e manda pra tela
+    final List<Alert> alertasDoCache = cacheRaw.map((raw) {
+      try { return Alert.fromJson(jsonDecode(raw)); } catch (_) { return null; }
+    }).whereType<Alert>().toList();
+
+    if (alertasDoCache.isNotEmpty) {
+      _alertController.add(alertasDoCache);
+    }
+  }
+
   void _limparCacheSeNecessario() {
     if (_knownIds.length > _maxIdsInMemory) {
       final List<String> currentList = _knownIds.toList();

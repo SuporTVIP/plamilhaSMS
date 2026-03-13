@@ -10,7 +10,6 @@ import 'services/filter_service.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'utils/web_window_manager.dart';
-import 'package:workmanager/workmanager.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; // 🚀 DETECTOR DE WEB
 import 'package:flutter/services.dart'; // 🚀 IMPORTA O METHOD CHANNEL
 import 'dart:async';
@@ -18,185 +17,73 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-//import 'package:flutter_local_notifications/flutter_local_notifications.dart'; 
 import 'dart:ui';
 import 'widgets/consentimento_dialog.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'services/discovery_service.dart';
-import 'package:http/http.dart' as http;
 
 // Instância global de Notificações (Analogia: Um serviço de sistema como o Notification Center)
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-// 🚀 O MOTOR INVISÍVEL (Workmanager)
-@pragma('vm:entry-point')
-void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    print("🤖 [BACKGROUND] Workmanager acordou! Tarefa: $task");
-
-    try {
-      await Firebase.initializeApp();
-
-      // 🚀 USA O CÉREBRO CENTRAL DE FILTROS
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.reload();
-      final filtros = await UserFilters.load();
-
-      final String lastSyncStr = DateTime.now().subtract(const Duration(hours: 12)).toIso8601String();
-      final String? discoveryCache = prefs.getString('DISCOVERY_CACHE_V2');
-      String? gasUrl;
-
-      if (discoveryCache != null && discoveryCache.isNotEmpty) {
-        try {
-          final Map<String, dynamic> configJson = jsonDecode(discoveryCache);
-          gasUrl = configJson['gas_url'];
-        } catch (_) {}
-      }
-
-      if (gasUrl == null || gasUrl.isEmpty) return Future.value(true);
-
-      final uri = Uri.parse(gasUrl).replace(queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
-      final response = await http.get(uri).timeout(const Duration(seconds: 25));
-
-      if (response.statusCode != 200) return Future.value(true);
-      final body = jsonDecode(response.body);
-      if (body['status'] != 'success') return Future.value(true);
-
-      final List<dynamic> rawData = body['data'] ?? [];
-      final List<String> knownIds = List<String>.from(jsonDecode(prefs.getString('WM_KNOWN_IDS') ?? '[]'));
-      final hoje = DateTime.now();
-      final inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
-
-      final novasAprovadas = rawData.where((j) {
-        try {
-          final String id = j['id']?.toString() ?? '';
-          final DateTime data = DateTime.parse(j['data'] ?? '');
-          final String prog = (j['programa'] ?? '').toString();
-          final String trecho = (j['trecho'] ?? '').toString();
-
-          if (knownIds.contains(id)) return false;
-          if (!data.isAfter(inicioDoDia)) return false;
-
-          // 🚀 A MÁGICA ACONTECE AQUI: Deixa o Cérebro Central decidir
-          return filtros.passaNoFiltroBasico(prog, trecho);
-        } catch (_) {
-          return false;
-        }
-      }).toList();
-
-      if (novasAprovadas.isEmpty) return Future.value(true);
-
-      final novosIds = novasAprovadas.map((j) => j['id'].toString()).toList();
-      final idsAtualizados = [...knownIds, ...novosIds];
-      final idsParaSalvar = idsAtualizados.length > 500 ? idsAtualizados.sublist(idsAtualizados.length - 500) : idsAtualizados;
-      await prefs.setString('WM_KNOWN_IDS', jsonEncode(idsParaSalvar));
-
-      final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
-      await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
-
-      final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          'emissao_vip_v3', 'Emissões FãMilhasVIP',
-          importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
-        ),
-      );
-
-      final String titulo = novasAprovadas.length == 1 ? "✈️ Oportunidade: ${novasAprovadas.first['programa']}" : "🚨 Radar VIP Atualizado";
-      final String corpo = novasAprovadas.length == 1 ? novasAprovadas.first['trecho']?.toString() ?? 'Nova passagem encontrada!' : "Encontramos ${novasAprovadas.length} novas passagens nos seus filtros!";
-
-      await localNotif.show(
-        id: DateTime.now().millisecond, title: titulo, body: corpo,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
-        ),
-      );
-
-    } catch (e) {
-      print("❌ [WM] Erro fatal no background: $e");
-    }
-    return Future.value(true);
-  });
-}
-
-// 🚀 Handler de mensagens do Firebase (Push Oculto)
+// 🚀 Handler de mensagens do Firebase (Push Oculto) - ARQUITETURA 100% PUSH
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // 1. Inicia o motor principal com segurança
   await Firebase.initializeApp();
-  debugPrint("🚨 [FCM] ACORDOU O BACKGROUND! Dados: ${message.data}");
-
-  // 2. Extrai os dados BRUTOS do payload do Google Apps Script
   final String action = message.data['action'] ?? '';
   final String tipo = message.data['tipo'] ?? '';
   
-  if (action == 'SYNC_ALERTS' || tipo == 'NOVO_ALERTA') {
-    debugPrint("⚙️ [FCM] Processando pacote de dados oculto...");
+  if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') return;
 
-    String programa = message.data['programa'] ?? 'Geral';
-    String trecho = message.data['trecho'] ?? 'Nova Oportunidade!';
-    String detalhes = message.data['detalhes'] ?? '';
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  final filtros = await UserFilters.load();
 
-    // 🚀 RAIO-X FOCADO NA IDA E VOLTA
-    String detalhesUpper = detalhes.toUpperCase();
-    bool achouVolta = detalhesUpper.contains("VOLTA");
+  final String programa = message.data['programa'] ?? '';
+  final String trecho = message.data['trecho'] ?? '';
+  final String detalhes = message.data['detalhes'] ?? '';
 
-    debugPrint("🔍 [FCM-RAIO-X] Prog: $programa | Trecho: $trecho");
-    debugPrint("🔍 [FCM-RAIO-X] Texto 'detalhes' tem ${detalhes.length} caracteres.");
-    debugPrint("🔄 [FCM-RAIO-X] Contém a palavra 'VOLTA'? -> ${achouVolta ? 'SIM ✅' : 'NÃO ❌'}");
-    if (!achouVolta) {
-      debugPrint("👀 [FCM-RAIO-X] Conteúdo dos detalhes recebidos: $detalhes");
-    }
-
-    // 3. Carrega o Cérebro de forma BLINDADA
-    UserFilters filtros;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.reload();
-      filtros = await UserFilters.load();
-      debugPrint("🧠 [FCM-CÉREBRO] Filtros Carregados: Latam: ${filtros.latamAtivo}, Smiles: ${filtros.smilesAtivo}, Azul: ${filtros.azulAtivo}");
-      debugPrint("🧠 [FCM-CÉREBRO] Origens: ${filtros.origens} | Destinos: ${filtros.destinos}");
-    } catch (e) {
-      debugPrint("⚠️ [FCM-ERRO] Falha ao carregar filtros, assumindo padrão: $e");
-      filtros = UserFilters(); // Fallback para não crashar
-    }
-
-    // 4. Pergunta pro Cérebro se pode tocar a sirene
-    bool aprovado = filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes);
-
-    if (aprovado) {
-      debugPrint("✅ [FCM-PORTEIRO] Filtro APROVADO no Background! Disparando Sirene Dourada...");
-      try {
-        final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
-        await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
-
-        final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-        await androidPlugin?.createNotificationChannel(
-          const AndroidNotificationChannel(
-            'emissao_vip_v3', 'Emissões FãMilhasVIP',
-            importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
-          ),
-        );
-
-        await localNotif.show(
-          id: DateTime.now().millisecond,
-          title: "✈️ Oportunidade: $programa",
-          body: trecho,
-          notificationDetails: const NotificationDetails(
-            android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
-          ),
-          payload: trecho, // 🚀 ENVIA O TRECHO COMO RASTREADOR
-        );
-      } catch (e) {
-        debugPrint("❌ [FCM-ERRO] Falha ao exibir a notificação visual: $e");
-      }
-    } else {
-      debugPrint("⛔ [FCM-PORTEIRO] BLOQUEADO. O Voo não atende aos critérios do usuário.");
-    }
-  } else {
-     debugPrint("🤷‍♂️ [FCM] Push recebido, mas não era um SYNC_ALERTS válido.");
+  // 1. Verifica filtros ANTES de gastar qualquer recurso
+  if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+    debugPrint("⛔ [FCM-PORTEIRO] Bloqueado pelos filtros.");
+    return;
   }
+
+  // 2. Monta o objeto Alert COMPLETO do payload — sem usar a internet!
+  final Alert novoAlerta = Alert.fromPush(message.data);
+
+  // 3. Salva no cache local (ALERTS_CACHE_V2)
+  final List<String> cacheRaw = prefs.getStringList('ALERTS_CACHE_V2') ?? [];
+  
+  // Proteção contra duplicatas
+  final jaExiste = cacheRaw.any((raw) {
+    try { return jsonDecode(raw)['id'] == novoAlerta.id; } catch (_) { return false; }
+  });
+
+  if (!jaExiste) {
+    debugPrint("💾 [FCM] Salvando passagem no Cache Local: ${novoAlerta.trecho}");
+    cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
+    // Limita o histórico a 100 alertas para não lotar a memória do celular
+    await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
+  }
+
+  // 4. Toca a sirene dourada
+  final FlutterLocalNotificationsPlugin localNotif = FlutterLocalNotificationsPlugin();
+  await localNotif.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/launcher_icon')));
+  final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      'emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true, enableVibration: true,
+    ),
+  );
+
+  await localNotif.show(
+    id: novoAlerta.id.hashCode, title: "✈️ Oportunidade: $programa", body: trecho,
+    notificationDetails: const NotificationDetails(
+      android: AndroidNotificationDetails('emissao_vip_v3', 'Emissões FãMilhasVIP', importance: Importance.max, priority: Priority.high, sound: RawResourceAndroidNotificationSound('alerta'), playSound: true),
+    ),
+    payload: trecho, // Rastreador para o Dourado
+  );
 }
 
 /// Ponto de entrada do aplicativo.
@@ -205,10 +92,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // On web the default Firebase app must be created with explicit options
-  // (see https://firebase.flutter.dev/docs/installation/web).
-  // Replace the placeholder values below with your project's configuration
-  // or generate a `firebase_options.dart` using `flutterfire configure`.
   if (kIsWeb) {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
@@ -251,23 +134,6 @@ void main() async {
       }
     },
   );
-
-  // 🚀 BLINDAGEM MULTIPLATAFORMA: Só liga o motor de fundo se NÃO for Web
-  if (!kIsWeb) {
-    Workmanager().initialize(
-      callbackDispatcher,
-      isInDebugMode: true, 
-    );
-
-    Workmanager().registerPeriodicTask(
-      "RADAR_VIP_TASK_01", 
-      "verificarAlertasFundo", 
-      frequency: const Duration(minutes: 15),
-      constraints: Constraints(
-        networkType: NetworkType.connected, 
-      ),
-    );
-  }
 
   runApp(const MilhasAlertApp());
 }
@@ -609,18 +475,7 @@ class _MainNavigatorState extends State<MainNavigator> with WidgetsBindingObserv
     // 🚀 Chama a função de adaptação web/nativa
     registerWebCloseListener(); 
     alertService.startMonitoring();
-    // ❌ APAGUEI A LINHA '_setupFirebase();' QUE ESTAVA AQUI!
 
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-  if (message.data['action'] == 'SYNC_ALERTS') {
-    
-    // 🚀 O PUSH ACABOU DE CHEGAR!
-    // Chamamos o serviço de alertas para buscar as novidades agora mesmo
-    // sem esperar o cronômetro do polling.
-    alertService.forceSync(); 
-
-  }
-});
   }
 
   @override
@@ -674,7 +529,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   // 🚀 1. VARIÁVEL DO SOM
   bool _isSoundEnabled = true; 
   bool _needsWebAudioInteraction = kIsWeb; // 🚀 Web precisa de interação para ativar o áudio
-  bool _isAppRecemAberto = false; // 🚀 O NOSSO ABAFADOR DE ECO
 
   // 🚀 NOVO: VARIÁVEL QUE GUARDA QUAL PASSAGEM DEVE PISCAR EM DOURADO
   String? _highlightedTrecho;
@@ -683,11 +537,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    
-    _isAppRecemAberto = true;
-    Future.delayed(const Duration(seconds: 8), () {
-      if (mounted) _isAppRecemAberto = false;
-    });
 
     _loadSoundPreference(); // 🚀 2. CARREGA PREFERÊNCIA AO ABRIR
     _carregarFiltros();
@@ -762,7 +611,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
     }
   }
 
-  /// Inicia a escuta da Stream de alertas.
 /// Inicia a escuta da Stream de alertas com Logs de Raio-X.
   void _iniciarMotorDeTracao() {
     print("🚀 [UI-MOTOR] Iniciando Motor de Tração e escutando Stream...");
@@ -804,27 +652,6 @@ class _AlertsScreenState extends State<AlertsScreen> with WidgetsBindingObserver
           _isCarregando = false;
         });
 
-        // 🚀 Feedback Sonoro e Visual (Notificação)
-if (novosQuePassaram.isNotEmpty) {
-          
-          // 🚀 SE O ABAFADOR ESTIVER LIGADO, ELE NÃO APITA E NÃO GERA NOTIFICAÇÃO!
-          if (_isAppRecemAberto) {
-            print("🔕 [UI-UX] App recém-aberto. Silenciando a sirene para não gerar eco.");
-          } else {
-            print("🔔 [UI-UX] ${novosQuePassaram.length} alertas passaram! Disparando UX visual/sonora.");
-            try {
-              if (_isSoundEnabled) {
-                await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
-              }
-              _mostrarNotificacao(novosQuePassaram.first);
-            } catch (e) {
-              print("⚠️ [UI-UX] Erro ao tocar som: $e");
-            }
-          }
-          
-        } else {
-          print("🔕 [UI-UX] Alertas inéditos chegaram, mas NENHUM passou nos filtros. Não tocaremos a sirene.");
-        }
       }
     });
 
@@ -837,31 +664,6 @@ if (novosQuePassaram.isNotEmpty) {
     });
   }
 
-  /// Gera uma notificação nativa no sistema operacional com SOM CUSTOMIZADO.
-  Future<void> _mostrarNotificacao(Alert alerta) async {
-    // Não é const porque dependemos de _isSoundEnabled em tempo de execução
-    // Tire o 'const' e use 'final'
-    final AndroidNotificationDetails androidPlatformChannelSpecifics = AndroidNotificationDetails(
-      'emissao_vip_v3', // 🚀 CANAL V3 AQUI TAMBÉM
-      'Emissões FãMilhas VIP',
-      channelDescription: 'Avisos de novas passagens',
-      importance: Importance.max,
-      priority: Priority.high,
-      icon: '@mipmap/launcher_icon', 
-      sound: const RawResourceAndroidNotificationSound('alerta'), // Aqui o const fica só no som
-      playSound: _isSoundEnabled, // A sua variável dinâmica brilha aqui!
-    );
-    
-    final NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
-    
-    await flutterLocalNotificationsPlugin.show(
-      id: alerta.id.hashCode,
-      title: '✈️ ${alerta.programa} - Nova Oportunidade!',
-      body: alerta.trecho != "N/A" ? alerta.trecho : alerta.mensagem,
-      notificationDetails: platformChannelSpecifics,
-      payload: alerta.trecho, // 🚀 NOVO: CARREGA O RASTREADOR
-    );
-  }
 
   /// Atualiza a lista exibida com base nos filtros configurados.
   void _aplicarFiltrosNaTela() {
@@ -900,16 +702,9 @@ if (novosQuePassaram.isNotEmpty) {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      print("📱 App voltou para o primeiro plano! Sincronizando Silenciosamente...");
-      
-      // 🚀 LIGA O ABAFADOR POR 8 SEGUNDOS NO RESUME
-      _isAppRecemAberto = true;
-      Future.delayed(const Duration(seconds: 8), () {
-        if (mounted) _isAppRecemAberto = false;
-      });
-
-      // Busca as novidades na planilha
-      _alertService.forceSync(); 
+      print("📱 App abriu! Lendo dados locais...");
+      // 🚀 NADA DE INTERNET. SÓ LÊ O QUE O PUSH GUARDOU!
+      _alertService.carregarDoCache(); 
     }
   }
 
