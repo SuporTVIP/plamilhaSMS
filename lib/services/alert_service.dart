@@ -44,9 +44,6 @@ class AlertService {
   DateTime? _lastSyncTime;
   bool _isFetching               = false; // guarda apenas o forceSync inicial
 
-  // Throttle do forceSync no web: evita sync em cada troca de aba.
-  // Só sincroniza de novo se passou mais de 5 minutos desde o último.
-  DateTime? _lastWebSyncTime;
 
   // ── Fila de Destaques Dourados ────────────────────────────────────────────
   // Cada notificação tocada pelo usuário coloca seu trecho nesta fila.
@@ -171,32 +168,10 @@ class AlertService {
   Future<void> carregarDoCache() async {
     _debugLog("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...");
 
-    // ── WEB: sem handler de background, busca via HTTP com throttle de 5 min ──
+    // ── WEB: sem handler de background, sempre busca via HTTP ──────────────
     if (kIsWeb) {
-      final now = DateTime.now();
-      final bool precisaSync = _lastWebSyncTime == null ||
-          now.difference(_lastWebSyncTime!) > const Duration(minutes: 5);
-
-      if (precisaSync) {
-        _debugLog("🌐 [SERVICE] Web: sincronizando (última sync há "
-            "${_lastWebSyncTime == null ? 'nunca' : '${now.difference(_lastWebSyncTime!).inMinutes}min'})");
-        _lastWebSyncTime = now;
-        await forceSync(silencioso: true);
-      } else {
-        _debugLog("⏱️ [SERVICE] Web: sync ignorado (faz menos de 5 min).");
-        // Emite o cache atual sem fazer HTTP
-        final prefs = await SharedPreferences.getInstance();
-        final cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
-        if (cacheRaw.isNotEmpty) {
-          final alertas = cacheRaw.map((raw) {
-            try { return Alert.fromJson(jsonDecode(raw)); } catch (_) { return null; }
-          }).whereType<Alert>().toList();
-          if (alertas.isNotEmpty) {
-            _lastSyncTime = now;
-            _alertController.add(alertas);
-          }
-        }
-      }
+      _debugLog("🌐 [SERVICE] Web: sincronizando com o servidor...");
+      await forceSync(silencioso: true);
       return;
     }
 
@@ -292,20 +267,24 @@ class AlertService {
         final novosSerializados = novos.map((a) => jsonEncode(a.toJson())).toList();
         final combinado = [...novosSerializados, ...cacheAtual];
 
-        // Deduplicação secundária por trecho — evita acúmulo da mesma
-        // emissão com IDs diferentes (IDs são timestamps no GAS).
-        final Set<String> trechosVistos = {};
+        // Dedup por trecho+dataIda: remove duplicatas do mesmo voo na mesma data.
+        // Mantém voos com mesmo trecho mas datas diferentes (são emissões distintas).
+        final Set<String> chavesVistas = {};
         final List<String> cacheAtualizado = combinado.where((raw) {
           try {
-            final trecho = (jsonDecode(raw)['trecho'] as String?)?.toUpperCase().trim() ?? '';
-            if (trecho.isEmpty) return true; // mantém se não tem trecho
-            return trechosVistos.add(trecho); // add retorna false se já existe
+            final m = jsonDecode(raw);
+            final trecho  = (m['trecho']  as String? ?? '').toUpperCase().trim();
+            final dataIda = (m['dataIda'] as String? ?? '').trim();
+            // Se não tem trecho, mantém (não conseguimos deduplicar)
+            if (trecho.isEmpty) return true;
+            final chave = '\$trecho|\$dataIda';
+            return chavesVistas.add(chave);
           } catch (_) { return true; }
         }).take(100).toList();
 
         await prefs.setStringList(_keyCacheV2, cacheAtualizado);
-        _debugLog("💾 [SERVICE] forceSync salvou ${novos.length} alertas "
-            "(cache final: ${cacheAtualizado.length} únicos por trecho).");
+        _debugLog("💾 [SERVICE] forceSync: +${novos.length} novos "
+            "(cache: ${cacheAtualizado.length} entradas).");
       }
 
       // Emite para a UI silenciosamente (Sem apitar!)
