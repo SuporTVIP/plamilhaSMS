@@ -1115,6 +1115,27 @@ class _AlertCardState extends State<AlertCard> {
     }
   }
 
+  /// Formata strings de dinheiro vindas do JS que estão com casas decimais infinitas
+  String _formatarDecimal(String valorOriginal) {
+    if (valorOriginal == "N/A" || valorOriginal == "0" || valorOriginal.isEmpty) {
+      return valorOriginal;
+    }
+    try {
+      // Pega apenas números e o ponto/vírgula
+      String limpo = valorOriginal.replaceAll(RegExp(r'[^\d.,]'), '');
+      
+      // Converte vírgula pra ponto para o Dart conseguir calcular
+      limpo = limpo.replaceAll(',', '.');
+      
+      double numero = double.parse(limpo);
+      
+      // Trava em 2 casas decimais e devolve a vírgula (Padrão BR)
+      return numero.toStringAsFixed(2).replaceAll('.', ',');
+    } catch (e) {
+      return valorOriginal; // Fallback: se não for número, devolve como chegou
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final String prog = widget.alerta.programa.toUpperCase();
@@ -1243,83 +1264,72 @@ class _AlertCardState extends State<AlertCard> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoColumn("IDA", widget.alerta.dataIda),
+          // IDA e VOLTA sem hover — só texto estático
+          _buildInfoColumn("IDA",   widget.alerta.dataIda),
           _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
+          // 3 valores com zoom + crossfade de taxas
           _buildValueWithToast(
-            "FABRICADO",
-            widget.alerta.valorFabricado,
-            corPrincipal,
-            _blurCusto,
-            (bool v) => setState(() => _blurCusto = v)
+            "FABRICADO", widget.alerta.valorFabricado,
+            corPrincipal, _blurCusto,
+            (bool v) => setState(() => _blurCusto = v),
           ),
           _buildValueWithToast(
-            "BALCÃO",
-            widget.alerta.valorBalcao,
-            AppTheme.esmerald,
-            _blurBalcao,
-            (bool v) => setState(() => _blurBalcao = v)
+            "BALCÃO", widget.alerta.valorBalcao,
+            AppTheme.esmerald, _blurBalcao,
+            (bool v) => setState(() => _blurBalcao = v),
           ),
           _buildValueWithToast(
-            "AGÊNCIA",
-            widget.alerta.valorEmissao,
-            AppTheme.golden,
-            _blurAgencia,
-            (bool v) => setState(() => _blurAgencia = v)
+            "AGÊNCIA", widget.alerta.valorEmissao,
+            AppTheme.golden, _blurAgencia,
+            (bool v) => setState(() => _blurAgencia = v),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildValueWithToast(String label, String value, Color color, bool isFocused, Function(bool) onFocusChanged) {
-    final bool taxaExiste = widget.alerta.taxas != "N/A" && widget.alerta.taxas != "0";
-
-    return AnimatedScale(
-      scale: isFocused ? 1.1 : 1.0,
-      duration: const Duration(milliseconds: 200),
-      child: MouseRegion(
-        onEnter: (_) => onFocusChanged(true),
-        onExit: (_) => onFocusChanged(false),
-        child: GestureDetector(
-          onTapDown: (_) => onFocusChanged(true),
-          onTapUp: (_) => onFocusChanged(false),
-          onTapCancel: () => onFocusChanged(false),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.only(top: 4, left: 4, right: 4, bottom: 20),
-            decoration: BoxDecoration(
-              color: isFocused ? color.withOpacity(0.1) : Colors.transparent,
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: isFocused ? color : Colors.transparent),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
-              children: [
-                _buildInfoColumn(label, value, corValor: color),
-                Positioned(
-                  bottom: 36,
-                  child: IgnorePointer(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      opacity: isFocused ? 1.0 : 0.0,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: taxaExiste ? color : Colors.redAccent,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          taxaExiste ? "Taxas de R\$ ${widget.alerta.taxas} inclusas" : "Taxas não inclusas",
-                          style: const TextStyle(fontSize: 8.5, color: Colors.white, fontWeight: FontWeight.bold),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
+  Widget _buildValueWithToast(
+    String label, String value, Color color,
+    bool isFocused, Function(bool) onFocusChanged,
+  ) {
+    return MouseRegion(
+      onEnter: (_) => onFocusChanged(true),
+      onExit:  (_) => onFocusChanged(false),
+      child: GestureDetector(
+        onTapDown:   (_) => onFocusChanged(true),
+        onTapUp:     (_) => onFocusChanged(false),
+        onTapCancel: ()  => onFocusChanged(false),
+        child: Padding(
+          // Mantém o mesmo alinhamento das colunas IDA e VOLTA
+          padding: const EdgeInsets.symmetric(vertical: 4), 
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Label fixo (Ex: FABRICADO)
+              Text(label, style: const TextStyle(
+                color: AppTheme.muted, fontSize: 10,
+                letterSpacing: 1, fontWeight: FontWeight.w600,
+              )),
+              const SizedBox(height: 4),
+              
+              // 🚀 O zoom puro direto nos números, sem "caixa" em volta
+             SizedBox(
+                height: 28, // Altura fixa pra não empurrar o layout pra baixo
+                child: AnimatedScale(
+                  scale: isFocused ? 1.08 : 1.0, // Retornei o zoom para 1.15
+                  alignment: Alignment.centerLeft, // Cresce da esquerda pra direita
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOutBack, // Dá um micro "pulo" suave no final
+                  child: Padding( // 🚀 FALTAVA O "child:" BEM AQUI!
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                    child: Text(value, style: TextStyle(
+                      color: color, fontSize: 11.5, fontWeight: FontWeight.w900,
+                    )),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1348,7 +1358,7 @@ class _AlertCardState extends State<AlertCard> {
     );
   }
 
-  Widget _buildActionButtons(Color corPrincipal) {
+ Widget _buildActionButtons(Color corPrincipal) {
     return Column(
       children: [
         if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
@@ -1358,14 +1368,20 @@ class _AlertCardState extends State<AlertCard> {
               "EMITIR COM MILHAS PRÓPRIAS",
               Icons.open_in_browser,
               corPrincipal,
-              _abrirLink
+              _abrirLink,
+              showTax: true,
+              // 🚀 LIGAÇÃO 1: Foca no FABRICADO
+              onHoverChanged: (bool val) => setState(() => _blurCusto = val),
             ),
           ),
         _buildActionButton(
           "EMITIR NO BALCÃO",
           Icons.local_atm_rounded,
           AppTheme.esmerald,
-          _abrirBalcao
+          _abrirBalcao,
+          showTax: true,
+          // 🚀 LIGAÇÃO 2: Foca no BALCÃO
+          onHoverChanged: (bool val) => setState(() => _blurBalcao = val),
         ),
         const SizedBox(height: 8),
         _buildActionButton(
@@ -1374,53 +1390,152 @@ class _AlertCardState extends State<AlertCard> {
           AppTheme.golden,
           _emitirComAAgencia,
           textColor: AppTheme.surface,
-          shadowColor: AppTheme.amber
+          shadowColor: AppTheme.amber,
+          showTax: true,
+          // 🚀 LIGAÇÃO 3: Foca na AGÊNCIA
+          onHoverChanged: (bool val) => setState(() => _blurAgencia = val),
         ),
       ],
     );
   }
 
-  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onPressed, {Color? textColor, Color? shadowColor}) {
-    return SizedBox(
-      width: double.infinity,
-      height: 45,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: textColor ?? Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          elevation: 4,
-          shadowColor: (shadowColor ?? color).withOpacity(0.4),
-        ),
-        icon: Icon(icon, size: 18),
-        label: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)
-        ),
+  Widget _buildActionButton(
+    String label, IconData icon, Color color, VoidCallback onPressed, {
+    Color? textColor, Color? shadowColor, bool showTax = false,
+    ValueChanged<bool>? onHoverChanged, // 🚀 NOVO: Recebendo o Callback
+  }) {
+    final bool taxaExiste = widget.alerta.taxas != 'N/A' &&
+        widget.alerta.taxas != '0' && widget.alerta.taxas.isNotEmpty;
+    final Color taxColor  = taxaExiste ? color : Colors.redAccent;
+    final String taxLabel = taxaExiste
+        ? "Taxas de R\$ ${_formatarDecimal(widget.alerta.taxas)} inclusas"
+        : 'Taxas aeroportuárias não inclusas';
+    final IconData taxIcon = taxaExiste
+        ? Icons.check_circle_outline
+        : Icons.info_outline;
+
+    return _HoverButton(
+      onHoverChanged: onHoverChanged, // 🚀 NOVO: Passando o Callback para comunicação
+      builder: (bool hovered) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Toast desliza de cima para baixo com AnimatedSize
+          if (showTax) AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            child: hovered
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 160),
+                    opacity: hovered ? 1.0 : 0.0,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: taxColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(color: taxColor.withOpacity(0.35), width: 0.8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(taxIcon, size: 13, color: taxColor),
+                          const SizedBox(width: 6),
+                          Text(taxLabel, style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w600,
+                            color: taxColor, letterSpacing: 0.2,
+                          )),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+          ),
+          // Botão principal
+          SizedBox(
+            width: double.infinity,
+            height: 45,
+            child: ElevatedButton.icon(
+              onPressed: onPressed,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: textColor ?? Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: hovered ? 6 : 4,
+                shadowColor: (shadowColor ?? color).withOpacity(0.4),
+              ),
+              icon: Icon(icon, size: 18),
+              label: Text(label, style: const TextStyle(
+                fontWeight: FontWeight.bold, letterSpacing: 1,
+              )),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
     final Color corExibicao = corValor ?? Colors.white;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Text(
-          valor, 
-          style: TextStyle(
-            color: corExibicao,
-            fontSize: 11.5, 
-            fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700,
-          )
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 12, top: 5.4), // para evitar que textos longos encostem no próximo item
+            child:
+          Text(
+            valor, 
+            style: TextStyle(
+              color: corExibicao,
+              fontSize: 11.5, 
+              fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700,
+            )
+          ),
+          ),
+        ],
+      ),
     );
   }
 }
+class _HoverButton extends StatefulWidget {
+  final Widget Function(bool isHovered) builder;
+  final ValueChanged<bool>? onHoverChanged; // 🚀 NOVO: Callback de comunicação
+  
+  const _HoverButton({required this.builder, this.onHoverChanged});
+  
+  @override
+  State<_HoverButton> createState() => _HoverButtonState();
+}
+
+class _HoverButtonState extends State<_HoverButton> {
+  bool _h = false;
+
+  void _updateState(bool val) {
+    if (_h != val) {
+      setState(() => _h = val);
+      if (widget.onHoverChanged != null) widget.onHoverChanged!(val);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    onEnter: (_) => _updateState(true),
+    onExit:  (_) => _updateState(false),
+    child: GestureDetector(
+      onTapDown:   (_) => _updateState(true),
+      onTapUp:     (_) => _updateState(false),
+      onTapCancel: ()  => _updateState(false),
+      child: widget.builder(_h),
+    ),
+  );
+}
+
 /// Tela de conexão com SMS (exclusivo para Android).
 class SmsScreen extends StatefulWidget {
   /// Construtor padrão para [SmsScreen].
@@ -1459,6 +1574,8 @@ class _SmsScreenState extends State<SmsScreen> {
 
   Future<void> _loadHistory() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+
     final String historyStr = prefs.getString('SMS_HISTORY') ?? '[]';
     try {
       final List<dynamic> decoded = jsonDecode(historyStr);

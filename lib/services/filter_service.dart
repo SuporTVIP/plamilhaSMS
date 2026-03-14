@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alert.dart';
 import 'discovery_service.dart';
+import '../utils/web_filters_sync.dart'; // Sincroniza filtros com o SW via IndexedDB
 
 /// Define e gerencia as preferências de filtragem de alertas para o usuário.
 ///
@@ -74,17 +75,22 @@ class UserFilters {
     }
   }
 
-  /// Salva as preferências atuais no armazenamento local (SharedPreferences).
+  /// Salva as preferências atuais no armazenamento local (SharedPreferences)
+  /// e sincroniza com o Service Worker via IndexedDB (Web).
   Future<void> save() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String jsonStr = jsonEncode({
+    final Map<String, dynamic> filtrosMap = {
       'latam': latamAtivo,
       'smiles': smilesAtivo,
       'azul': azulAtivo,
       'origens': origens,
       'destinos': destinos,
-    });
-    await prefs.setString(_keyUserFilters, jsonStr);
+    };
+    await prefs.setString(_keyUserFilters, jsonEncode(filtrosMap));
+
+    // Grava no IndexedDB para que o Service Worker leia antes de notificar.
+    // No mobile esta chamada é no-op (ver web_filters_sync_stub.dart).
+    sincronizarFiltrosParaSW(filtrosMap);
   }
 
   /// Verifica se um programa e trecho específicos passam no filtro.

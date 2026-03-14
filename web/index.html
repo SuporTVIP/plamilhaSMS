@@ -23,22 +23,26 @@
     }
 
     body {
-      background-color: #0F172A;
-      /* Mesmo AppTheme.bg do Flutter */
+      background-color: #000000;
+      /* Igual ao backgroundColor: Colors.black do SplashRouter */
+      overflow: hidden;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
-      font-family: sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
     #loading-screen {
+      position: absolute;
+      inset: 0;
       display: flex;
-      flex-direction: column;
+      justify-content: center;
       align-items: center;
-      gap: 24px;
+      background-color: #000000;
+      z-index: 9999;
       opacity: 1;
-      transition: opacity 0.4s ease;
+      transition: opacity 0.5s ease-out;
     }
 
     #loading-screen.hidden {
@@ -46,61 +50,165 @@
       pointer-events: none;
     }
 
-    .logo-glow {
-      width: 80px;
+    /* _DotGridPainter recriado em CSS */
+    .dot-grid {
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.2px, transparent 1.2px);
+      background-size: 28px 28px;
+      z-index: 0;
+    }
+
+    /* Barras de Letterbox do _SplashRouterState */
+    .letterbox {
+      position: absolute;
+      left: 0;
+      right: 0;
       height: 80px;
+      background: #000000;
+      z-index: 1;
+    }
+
+    .letterbox.top {
+      top: 0;
+      animation: slideDown 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    .letterbox.bottom {
+      bottom: 0;
+      animation: slideUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    @keyframes slideDown {
+      from {
+        transform: translateY(-100%);
+      }
+
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(100%);
+      }
+
+      to {
+        transform: translateY(0);
+      }
+    }
+
+    /* Conteúdo Central e Efeito de Escala (Tween _logoScale / _logoOpacity) */
+    .center-content {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      /* Entra crescendo do scale 0.82 para 1.0 exatamente como no Dart */
+      animation: scaleIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+
+    @keyframes scaleIn {
+      from {
+        opacity: 0;
+        transform: scale(0.82);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    /* Animação do Glow (Shadow Radius) + Círculo do Logo */
+    .logo-container {
+      width: 96px;
+      height: 96px;
       border-radius: 50%;
-      background: #1E293B;
+      background: rgba(56, 189, 248, 0.15);
+      /* AppTheme.accent com opacidade */
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 30px rgba(56, 189, 248, 0.4);
-      animation: pulse 2s ease-in-out infinite;
+      margin-bottom: 28px;
+      animation: pulseGlow 1.8s ease-in-out infinite alternate;
     }
 
-    .logo-glow img {
-      width: 60px;
-      height: 60px;
+    .logo-container img {
+      width: 100%;
+      height: 100%;
       border-radius: 50%;
       object-fit: cover;
     }
 
+    @keyframes pulseGlow {
+      0% {
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.5), 0 0 16px rgba(255, 255, 255, 0.04);
+      }
+
+      100% {
+        box-shadow: 0 0 36px rgba(56, 189, 248, 0.7), 0 0 72px rgba(255, 255, 255, 0.08);
+      }
+    }
+
+    /* Textos idênticos ao do Flutter */
     .brand {
       color: white;
-      font-size: 22px;
+      font-size: 28px;
       font-weight: 900;
       letter-spacing: 6px;
+      text-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+      display: flex;
+      align-items: baseline;
     }
 
     .brand span {
       color: #38BDF8;
+      /* AppTheme.accent */
       font-weight: 300;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
     }
 
-    .spinner {
-      width: 32px;
-      height: 32px;
-      border: 3px solid #1E293B;
-      border-top-color: #38BDF8;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+    .tagline {
+      color: rgba(255, 255, 255, 0.35);
+      font-size: 10px;
+      letter-spacing: 4px;
+      font-weight: 400;
+      margin-top: 10px;
     }
 
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
+    /* Progresso sutil vip para dar feedback no web */
+    .vip-loader-line {
+      width: 140px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.1);
+      margin-top: 36px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 2px;
+    }
+
+    .vip-loader-line::after {
+      content: "";
+      position: absolute;
+      left: -50%;
+      top: 0;
+      height: 100%;
+      width: 40%;
+      background: #38BDF8;
+      box-shadow: 0 0 10px #38BDF8;
+      animation: sweepLine 1.5s ease-in-out infinite;
+    }
+
+    @keyframes sweepLine {
+      0% {
+        left: -50%;
       }
-    }
 
-    @keyframes pulse {
-
-      0%,
       100% {
-        box-shadow: 0 0 20px rgba(56, 189, 248, 0.3);
-      }
-
-      50% {
-        box-shadow: 0 0 40px rgba(56, 189, 248, 0.7);
+        left: 100%;
       }
     }
   </style>
@@ -108,13 +216,22 @@
 
 <body>
 
-  <!-- Aparece IMEDIATAMENTE. O Flutter o remove quando estiver pronto. -->
   <div id="loading-screen">
-    <div class="logo-glow">
-      <img src="icons/Icon-192.png" alt="Logo" onerror="this.style.display='none'">
+    <div class="dot-grid"></div>
+    <div class="letterbox top"></div>
+    <div class="letterbox bottom"></div>
+
+    <div class="center-content">
+      <div class="logo-container">
+        <!-- Exibe o ícone normal, se der erro mostra fallback como no Flutter -->
+        <img src="icons/Icon-192.png" alt="Logo" onerror="this.style.display='none'">
+      </div>
+      <div class="brand">PLAMILHAS<span>VIP</span></div>
+      <div class="tagline">RADAR DE EMISSÕES VIP</div>
+
+      <!-- Linha minimalista de carregamento -->
+      <div class="vip-loader-line"></div>
     </div>
-    <div class="brand">PLAMILHAS<span>VIP</span></div>
-    <div class="spinner"></div>
   </div>
 
   <script>
@@ -123,6 +240,7 @@
       const screen = document.getElementById('loading-screen');
       if (screen) {
         screen.classList.add('hidden');
+        // Dá o tempo da animação de opacidade para remover do DOM
         setTimeout(() => screen.remove(), 500);
       }
     });
