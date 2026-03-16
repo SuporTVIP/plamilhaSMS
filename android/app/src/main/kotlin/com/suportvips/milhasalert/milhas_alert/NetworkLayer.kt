@@ -10,7 +10,7 @@ import java.io.InputStreamReader
 
 object NetworkLayer {
     // 🚨 ATENÇÃO: Verifique se esta URL é exatamente a URL ativa do seu GAS atual!
-    private const val SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyRZTj0zpin7ACze3FhyL9GbNvIeloNPzPlr-a7U0TlHFDaviIzs3y1QLwJzaOyzuti/exec"
+    private const val SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw6U1f8ccnH3V5_Vw386g6aSGRF7sTJdFGDU24wBl66aoHNcd1oDwIfcYXcS1_H-2qI/exec"
 
     fun sendSmsData(
         licenseKey: String,

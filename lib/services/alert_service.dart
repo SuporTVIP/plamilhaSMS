@@ -28,22 +28,28 @@ class AlertService {
   AlertService._interno();
 
   // ── Constantes ────────────────────────────────────────────────────────────
-  static const String _keyCacheV2     = 'ALERTS_CACHE_V2';
+  static const String _keyCacheV2 = 'ALERTS_CACHE_V2';
   static const String _keySyncInicial = 'SYNC_INICIAL_FEITA';
-  static const String _keyLastSync    = 'LAST_ALERT_SYNC_V2';
+  static const String _keyLastSync = 'LAST_ALERT_SYNC_V2';
+  // Data em que o cache foi populado: 'YYYY-MM-DD'
+  // Usado para limpar o cache ao virar a meia-noite (Bug 2 fix).
+  static const String _keyCacheDate = 'CACHE_DATE_V2';
 
   // ── Dependências ──────────────────────────────────────────────────────────
-  final CacheService _cache           = CacheService();
-  final DiscoveryService _discovery   = DiscoveryService();
+  final CacheService _cache = CacheService();
+  final DiscoveryService _discovery = DiscoveryService();
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
   // ── Estado interno ────────────────────────────────────────────────────────
   bool _notificationsInitialized = false;
-  bool _monitoringStarted        = false;
+  bool _monitoringStarted = false;
   DateTime? _lastSyncTime;
-  bool _isFetching               = false; // guarda apenas o forceSync inicial
+  bool _isFetching = false; // guarda apenas o forceSync inicial
 
+  // Throttle do forceSync no web: evita sync em cada troca de aba.
+  // Só sincroniza de novo se passou mais de 5 minutos desde o último.
+  DateTime? _lastWebSyncTime;
 
   // ── Fila de Destaques Dourados ────────────────────────────────────────────
   // Cada notificação tocada pelo usuário coloca seu trecho nesta fila.
@@ -64,10 +70,13 @@ class AlertService {
     final String trechoNormalizado = trecho.trim().toUpperCase();
     // Evita duplicatas consecutivas (ex: dois cliques rápidos na mesma notificação)
     if (_pendingHighlightQueue.isNotEmpty &&
-        _pendingHighlightQueue.last == trechoNormalizado) return;
+        _pendingHighlightQueue.last == trechoNormalizado)
+      return;
     _pendingHighlightQueue.add(trechoNormalizado);
-    _debugLog("✨ [SERVICE] Dourado enfileirado: $trechoNormalizado "
-        "(${_pendingHighlightQueue.length} na fila)");
+    _debugLog(
+      "✨ [SERVICE] Dourado enfileirado: $trechoNormalizado "
+      "(${_pendingHighlightQueue.length} na fila)",
+    );
   }
 
   /// Retira e retorna o próximo trecho da fila (FIFO).
@@ -76,8 +85,10 @@ class AlertService {
   String? consumePendingHighlight() {
     if (_pendingHighlightQueue.isEmpty) return null;
     final String valor = _pendingHighlightQueue.removeAt(0);
-    _debugLog("✨ [SERVICE] Dourado consumido: $valor "
-        "(${_pendingHighlightQueue.length} restantes na fila)");
+    _debugLog(
+      "✨ [SERVICE] Dourado consumido: $valor "
+      "(${_pendingHighlightQueue.length} restantes na fila)",
+    );
     return valor;
   }
 
@@ -109,7 +120,7 @@ class AlertService {
   String get lastSyncLabel {
     if (_lastSyncTime == null) return 'Aguardando push...';
     final Duration diff = DateTime.now().difference(_lastSyncTime!);
-    if (diff.inMinutes < 1)  return 'Agora mesmo';
+    if (diff.inMinutes < 1) return 'Agora mesmo';
     if (diff.inMinutes < 60) return 'Há ${diff.inMinutes} min';
     return 'Há ${diff.inHours}h';
   }
@@ -123,8 +134,10 @@ class AlertService {
     const AndroidInitializationSettings androidInit =
         AndroidInitializationSettings('@mipmap/launcher_icon');
     const DarwinInitializationSettings iosInit = DarwinInitializationSettings();
-    const InitializationSettings initSettings =
-        InitializationSettings(android: androidInit, iOS: iosInit);
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
     await _localNotifications.initialize(settings: initSettings);
     _notificationsInitialized = true;
   }
@@ -166,12 +179,46 @@ class AlertService {
   /// O ALERTS_CACHE_V2 nunca é atualizado automaticamente, então
   /// no web sempre executamos forceSync para buscar dados frescos.
   Future<void> carregarDoCache() async {
-    _debugLog("⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...");
+    _debugLog(
+      "⚡ [SERVICE] Lendo passagens direto do Cache Local (Zero Internet)...",
+    );
 
-    // ── WEB: sem handler de background, sempre busca via HTTP ──────────────
+    // ── WEB: sem handler de background, busca via HTTP com throttle de 5 min ──
     if (kIsWeb) {
-      _debugLog("🌐 [SERVICE] Web: sincronizando com o servidor...");
-      await forceSync(silencioso: true);
+      final now = DateTime.now();
+      final bool precisaSync =
+          _lastWebSyncTime == null ||
+          now.difference(_lastWebSyncTime!) > const Duration(minutes: 5);
+
+      if (precisaSync) {
+        _debugLog(
+          "🌐 [SERVICE] Web: sincronizando (última sync há "
+          "${_lastWebSyncTime == null ? 'nunca' : '${now.difference(_lastWebSyncTime!).inMinutes}min'})",
+        );
+        _lastWebSyncTime = now;
+        await forceSync(silencioso: true);
+      } else {
+        _debugLog("⏱️ [SERVICE] Web: sync ignorado (faz menos de 5 min).");
+        // Emite o cache atual sem fazer HTTP
+        final prefs = await SharedPreferences.getInstance();
+        final cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
+        if (cacheRaw.isNotEmpty) {
+          final alertas = cacheRaw
+              .map((raw) {
+                try {
+                  return Alert.fromJson(jsonDecode(raw));
+                } catch (_) {
+                  return null;
+                }
+              })
+              .whereType<Alert>()
+              .toList();
+          if (alertas.isNotEmpty) {
+            _lastSyncTime = now;
+            _alertController.add(alertas);
+          }
+        }
+      }
       return;
     }
 
@@ -179,32 +226,68 @@ class AlertService {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
 
+    // ── LIMPEZA DIÁRIA (Bug 2 fix) ──────────────────────────────────────
+    // Compara a data atual com a data em que o cache foi gravado.
+    // Se virou o dia, limpa o cache para que alertas de ontem não apareçam.
+    final String hoje = DateTime.now().toIso8601String().split('T')[0];
+    final String? dataDoCache = prefs.getString(_keyCacheDate);
+
+    if (dataDoCache != null && dataDoCache != hoje) {
+      _debugLog(
+        '🧹 [SERVICE] Novo dia ($hoje ≠ $dataDoCache). Limpando cache do dia anterior...',
+      );
+      await prefs.remove(_keyCacheV2);
+      await prefs.setString(_keyCacheDate, hoje);
+      await prefs.setBool(
+        _keySyncInicial,
+        false,
+      ); // força sync inicial do novo dia
+    }
+
     final List<String> cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
 
     if (cacheRaw.isEmpty) {
-      // Cache vazio = primeira instalação. Faz UMA sync HTTP e nunca mais.
+      // Cache vazio = primeira instalação OU início de novo dia.
       final bool jaTeveSyncInicial = prefs.getBool(_keySyncInicial) ?? false;
       if (!jaTeveSyncInicial) {
-        _debugLog("🌐 [SERVICE] Primeira instalação. Fazendo download inicial único...");
-        await forceSync(silencioso: true); // HTTP estritamente silencioso
+        _debugLog(
+          '🌐 [SERVICE] Cache vazio. Fazendo download inicial do dia...',
+        );
+        await prefs.setString(_keyCacheDate, hoje);
+        await forceSync(silencioso: true);
         await prefs.setBool(_keySyncInicial, true);
       }
       return;
     }
 
-    // Desserializa os alertas do cache
-    final List<Alert> alertasDoCache = cacheRaw.map((String raw) {
-      try {
-        return Alert.fromJson(jsonDecode(raw));
-      } catch (_) {
-        return null;
-      }
-    }).whereType<Alert>().toList();
+    // Desserializa e emite apenas alertas de HOJE
+    // (proteção extra caso o cache tenha entradas de dias anteriores)
+    final DateTime inicioDoDia = DateTime.now().copyWith(
+      hour: 0,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+    );
+
+    final List<Alert> alertasDoCache = cacheRaw
+        .map((String raw) {
+          try {
+            return Alert.fromJson(jsonDecode(raw));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<Alert>()
+        .where((a) => !a.data.isBefore(inicioDoDia)) // hoje em diante
+        .toList();
 
     if (alertasDoCache.isNotEmpty) {
       _lastSyncTime = DateTime.now();
       _alertController.add(alertasDoCache);
-      _debugLog("✅ [SERVICE] ${alertasDoCache.length} alertas emitidos do cache local.");
+      _debugLog(
+        '✅ [SERVICE] \${alertasDoCache.length} alertas de hoje emitidos do cache.',
+      );
     }
   }
 
@@ -224,16 +307,19 @@ class AlertService {
       final DiscoveryConfig? config = await _discovery.getConfig();
       if (config == null || config.gasUrl.isEmpty) return;
 
-      final String lastSyncStr =
-          DateTime.now().subtract(const Duration(hours: 48)).toIso8601String();
+      final String lastSyncStr = DateTime.now()
+          .subtract(const Duration(hours: 48))
+          .toIso8601String();
       final Uri uri = Uri.parse(config.gasUrl).replace(
-          queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr});
+        queryParameters: {'action': 'SYNC_ALERTS', 'since': lastSyncStr},
+      );
 
-      final http.Response response =
-          await http.get(uri).timeout(const Duration(seconds: 30));
+      final http.Response response = await http
+          .get(uri)
+          .timeout(const Duration(seconds: 30));
 
-      if (response.statusCode != 200 ||
-          !response.body.trim().startsWith('{')) return;
+      if (response.statusCode != 200 || !response.body.trim().startsWith('{'))
+        return;
 
       final dynamic body = jsonDecode(response.body);
       if (body['status'] != 'success') return;
@@ -241,7 +327,7 @@ class AlertService {
       final List<dynamic> rawData = body['data'] ?? [];
       if (rawData.isEmpty) return;
 
-      final DateTime hoje        = DateTime.now();
+      final DateTime hoje = DateTime.now();
       final DateTime inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
 
       final List<Alert> alertsFromServer = rawData
@@ -253,10 +339,13 @@ class AlertService {
 
       // Salva no ALERTS_CACHE_V2 para unificar com os alertas de push
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final List<String> cacheAtual =
-          prefs.getStringList(_keyCacheV2) ?? [];
+      final List<String> cacheAtual = prefs.getStringList(_keyCacheV2) ?? [];
       final Set<String> idsNoCache = cacheAtual.map((String raw) {
-        try { return jsonDecode(raw)['id'] as String; } catch (_) { return ''; }
+        try {
+          return jsonDecode(raw)['id'] as String;
+        } catch (_) {
+          return '';
+        }
       }).toSet();
 
       final List<Alert> novos = alertsFromServer
@@ -264,27 +353,25 @@ class AlertService {
           .toList();
 
       if (novos.isNotEmpty) {
-        final novosSerializados = novos.map((a) => jsonEncode(a.toJson())).toList();
-        final combinado = [...novosSerializados, ...cacheAtual];
-
-        // Dedup por trecho+dataIda: remove duplicatas do mesmo voo na mesma data.
-        // Mantém voos com mesmo trecho mas datas diferentes (são emissões distintas).
-        final Set<String> chavesVistas = {};
-        final List<String> cacheAtualizado = combinado.where((raw) {
-          try {
-            final m = jsonDecode(raw);
-            final trecho  = (m['trecho']  as String? ?? '').toUpperCase().trim();
-            final dataIda = (m['dataIda'] as String? ?? '').trim();
-            // Se não tem trecho, mantém (não conseguimos deduplicar)
-            if (trecho.isEmpty) return true;
-            final chave = '\$trecho|\$dataIda';
-            return chavesVistas.add(chave);
-          } catch (_) { return true; }
-        }).take(100).toList();
-
+        final novosSerializados = novos
+            .map((a) => jsonEncode(a.toJson()))
+            .toList();
+        // Dedup apenas por ID — não por trecho.
+        // Remover por trecho apagava alertas legítimos do mesmo trecho
+        // em horários diferentes (Bug 1 fix).
+        final cacheAtualizado = [
+          ...novosSerializados,
+          ...cacheAtual,
+        ].take(100).toList();
         await prefs.setStringList(_keyCacheV2, cacheAtualizado);
-        _debugLog("💾 [SERVICE] forceSync: +${novos.length} novos "
-            "(cache: ${cacheAtualizado.length} entradas).");
+
+        // Grava a data do cache para a limpeza diária detectar virada de dia
+        final String hoje = DateTime.now().toIso8601String().split('T')[0];
+        await prefs.setString(_keyCacheDate, hoje);
+
+        _debugLog(
+          '💾 [SERVICE] forceSync: +\${novos.length} novos (cache: \${cacheAtualizado.length}).',
+        );
       }
 
       // Emite para a UI silenciosamente (Sem apitar!)
