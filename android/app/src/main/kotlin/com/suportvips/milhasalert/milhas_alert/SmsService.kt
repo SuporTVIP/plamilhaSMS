@@ -104,7 +104,7 @@ class SmsService : Service() {
             // Tenta enviar. 
             // NOTA: Se o seu AppLog e o NetworkLayer existirem e estiverem corretos, isso vai brilhar!
             try {
-               val sucesso = NetworkLayer.sendSmsData(token, deviceId, body, sender, email)
+               val sucesso = NetworkLayer.sendSmsData(this, token, deviceId, body, sender, email)
                if (sucesso) {
                    Log.i("SmsService", "✅ SMS sincronizado com sucesso na nuvem do Google!")
                } else {

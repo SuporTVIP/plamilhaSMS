@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+    
   
   http: ^1.2.0
   dio: ^5.4.0
@@ -20,7 +21,9 @@ dependencies:
   
   webview_flutter: ^4.7.0
   audioplayers: ^6.0.0
+  package_info_plus: ^8.0.0
   # ❌ workmanager removido — substituído pela arquitetura 100% Push via FCM
+  
 
   google_fonts: ^8.0.2
   flutter_animate: ^4.5.0

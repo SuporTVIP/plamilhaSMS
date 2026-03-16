@@ -14,6 +14,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'core/theme.dart';
 import 'login_screen.dart';
@@ -754,6 +755,10 @@ class _AlertsScreenState extends State<AlertsScreen>
   bool _needsWebAudioInteraction = kIsWeb;
   String? _highlightedTrecho;
 
+  // ── Gist config state ────────────────────────────────────────────────
+  bool   _maintenanceMode = false; // card de manutenção no topo do feed
+  String _announcement    = '';    // card de aviso dinâmico no topo do feed
+
   // 🚀 NOVO: Normalizador Indestrutível
   String _normalizar(String texto) {
     if (texto.isEmpty) return "";
@@ -780,6 +785,7 @@ class _AlertsScreenState extends State<AlertsScreen>
     _loadSoundPreference();
     _carregarFiltros();
     _verificarNotificacaoDeAbertura();
+    _carregarConfigGist();  // maintenance_mode, announcement, min_version
   }
 
   void _verificarNotificacaoDeAbertura() {
@@ -845,6 +851,105 @@ class _AlertsScreenState extends State<AlertsScreen>
         }
       });
     }
+  }
+
+  // ── Gist config: maintenance, announcement, min_version ──────────────────
+  Future<void> _carregarConfigGist() async {
+    final DiscoveryConfig? config = await DiscoveryService().getConfig();
+    if (config == null || !mounted) return;
+
+    // ── announcement & maintenance_mode ─────────────────────────────────
+    if (mounted) {
+      setState(() {
+        _maintenanceMode = config.maintenanceMode;
+        _announcement    = config.announcement.trim();
+      });
+    }
+
+    // ── min_version: dialog bloqueante se versão instalada for menor ────
+    // Só faz sentido em mobile — web não tem versão de APK.
+    if (!kIsWeb) {
+      try {
+        final PackageInfo info = await PackageInfo.fromPlatform();
+        if (_versaoMenorQue(info.version, config.minVersion) && mounted) {
+          _mostrarDialogAtualizacao(config.minVersion);
+        }
+      } catch (e) {
+        debugPrint('⚠️ [GIST] Erro ao verificar versão: $e');
+      }
+    }
+  }
+
+  /// Compara duas versões semânticas: retorna true se [atual] < [minima].
+  bool _versaoMenorQue(String atual, String minima) {
+    List<int> parse(String v) =>
+        v.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+    final a = parse(atual);
+    final m = parse(minima);
+    for (int i = 0; i < 3; i++) {
+      final ai = i < a.length ? a[i] : 0;
+      final mi = i < m.length ? m[i] : 0;
+      if (ai < mi) return true;
+      if (ai > mi) return false;
+    }
+    return false; // igual
+  }
+
+  /// Dialog bloqueante de versão mínima.
+  /// Não tem botão de fechar — o usuário precisa clicar em Atualizar.
+  void _mostrarDialogAtualizacao(String versaoMinima) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false, // não fecha tocando fora
+      builder: (_) => PopScope(
+        canPop: false,           // não fecha com botão voltar
+        child: AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.system_update_rounded, color: AppTheme.accent, size: 22),
+              SizedBox(width: 10),
+              Text('Atualização necessária',
+                  style: TextStyle(color: Colors.white, fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Text(
+            'Esta versão do app não é mais suportada.\n'
+            'Por favor, atualize para a versão $versaoMinima ou superior para continuar.',
+            style: const TextStyle(color: AppTheme.text, height: 1.5),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  // Abre a Play Store na página do app
+                  const String playStoreUrl =
+                      'https://play.google.com/store/apps/details?id=com.suportvips.milhasalert.milhas_alert';
+                  final Uri uri = Uri.parse(playStoreUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: const Text('ATUALIZAR AGORA',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, letterSpacing: 1)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _carregarFiltros() async {
@@ -1128,49 +1233,130 @@ class _AlertsScreenState extends State<AlertsScreen>
       );
     }
 
+    // ── Banners do Gist (maintenance + announcement) ────────────────────
+    // São inseridos como primeiros itens da lista via CustomScrollView + Slivers,
+    // para que façam parte do scroll junto com os cards de alerta.
+    final List<Widget> banners = [
+      if (_maintenanceMode) _buildMaintenanceBanner(),
+      if (_announcement.isNotEmpty) _buildAnnouncementCard(),
+    ];
+
     if (_listaAlertasFiltrados.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.flight, size: 64, color: AppTheme.border),
-            const SizedBox(height: 16),
-            const Text(
-              "Nenhuma emissão encontrada.",
-              style: TextStyle(color: AppTheme.muted),
+      return Column(
+        children: [
+          ...banners,
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.flight, size: 64, color: AppTheme.border),
+                  const SizedBox(height: 16),
+                  const Text('Nenhuma emissão encontrada.',
+                      style: TextStyle(color: AppTheme.muted)),
+                  const Text('Verifique seus filtros ou aguarde.',
+                      style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                ],
+              ),
             ),
-            const Text(
-              "Verifique seus filtros ou aguarde.",
-              style: TextStyle(color: AppTheme.muted, fontSize: 12),
-            ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _listaAlertasFiltrados.length,
-      itemBuilder: (BuildContext context, int index) {
-        final Alert alerta = _listaAlertasFiltrados[index];
+    return CustomScrollView(
+      slivers: [
+        // Banners no topo, fora do itemBuilder
+        if (banners.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Column(children: banners),
+            ),
+          ),
+        // Cards de alerta
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int index) {
+                final Alert alerta = _listaAlertasFiltrados[index];
+                final String trechoNorm = _normalizar(alerta.trecho);
+                final String idNorm     = _normalizar(alerta.id);
+                final bool isGolden = _highlightedTrecho != null &&
+                    (trechoNorm.contains(_highlightedTrecho!) ||
+                     idNorm.contains(_highlightedTrecho!));
+                return AlertCard(
+                  key: ValueKey(alerta.id),
+                  alerta: alerta,
+                  isHighlighted: isGolden,
+                );
+              },
+              childCount: _listaAlertasFiltrados.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-        // 🚀 O CÉREBRO: Compara tanto o ID (Mobile) quanto o Trecho (Web)
-        final String trechoCardNormalizado = _normalizar(alerta.trecho);
-        final String idNormalizado = _normalizar(alerta.id);
+  // ── Card de manutenção ────────────────────────────────────────────────
+  Widget _buildMaintenanceBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.yellow.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.yellow.withOpacity(0.5), width: 1),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.build_circle_outlined,
+              color: AppTheme.yellow, size: 20),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Sistema em manutenção. Algumas funcionalidades podem estar limitadas.',
+              style: TextStyle(
+                  color: AppTheme.yellow,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-        final bool isGolden =
-            _highlightedTrecho != null &&
-            (trechoCardNormalizado.contains(_highlightedTrecho!) ||
-                idNormalizado.contains(_highlightedTrecho!));
-
-        return AlertCard(
-          key: ValueKey(
-            alerta.id,
-          ), // 🚀 A CHAVE DE OURO! Sem isso, o Flutter bagunçava as cores ao reciclar a lista!
-          alerta: alerta,
-          isHighlighted: isGolden,
-        );
-      },
+  // ── Card de announcement dinâmico ─────────────────────────────────────
+  Widget _buildAnnouncementCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.accent.withOpacity(0.35), width: 1),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.campaign_outlined,
+              color: AppTheme.accent, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _announcement,
+              style: const TextStyle(
+                  color: AppTheme.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
