@@ -31,13 +31,25 @@ class SmsService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i("SmsService", "🚀 [RAIO-X NATIVO] SmsService onStartCommand acionado!")
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notification = android.app.Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("Sincronizando SMS VIP")
-                .setContentText("Transmitindo para a nuvem...")
-                .setSmallIcon(android.R.drawable.stat_sys_upload) 
-                .build()
-            
+        // Android 10+ (API 29): startForeground precisa existir sempre
+        // Android 14+ (API 34): o tipo deve ser passado explicitamente
+        // ou o sistema lança MissingForegroundServiceTypeException
+        val notification = android.app.Notification.Builder(
+            this,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) CHANNEL_ID else ""
+        )
+            .setContentTitle("Sincronizando SMS VIP")
+            .setContentText("Transmitindo para a nuvem...")
+            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .build()
+
+        if (Build.VERSION.SDK_INT >= 34) {
+            // Android 14+: passa o tipo obrigatoriamente
+            startForeground(
+                1001, notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
             startForeground(1001, notification)
         }
 

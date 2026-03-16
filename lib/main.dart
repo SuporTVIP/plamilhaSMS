@@ -157,7 +157,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
           playSound: true,
         ),
       ),
-      payload: novoAlerta.id,
+      payload: novoAlerta.trecho,
     );
     debugPrint("✨ [FCM-UX] Notificação exibida com sucesso!");
   } catch (e) {
@@ -193,7 +193,6 @@ void main() async {
 
     await flutterLocalNotificationsPlugin.initialize(
       settings: const InitializationSettings(android: initAndroid),
-      // Foreground: app aberto, usuário toca notificação
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         if (response.payload != null && response.payload!.isNotEmpty) {
           debugPrint('👆 [FG-TAP] Toque em foreground: \${response.payload}');
@@ -201,8 +200,25 @@ void main() async {
           AlertService().registrarToqueNotificacao(response.payload!);
         }
       },
-      // Background: app minimizado, usuário toca notificação (flutter_local_notifications v12+)
       onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationTap,
+    );
+
+    // Cria o canal AQUI, na thread principal, antes do runApp.
+    // Android 13+ pode descartar notificações silenciosamente se o canal
+    // for criado apenas no isolate do background handler.
+    final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+        flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'emissao_vip_v3',
+        'Emissões FãMilhasVIP',
+        importance: Importance.max,
+        sound: RawResourceAndroidNotificationSound('alerta'),
+        playSound: true,
+        enableVibration: true,
+      ),
     );
   }
 
@@ -631,12 +647,18 @@ class _MainNavigatorState extends State<MainNavigator>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Pede a permissão pro usuário logo que ele abre o app
-    flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+    // Android 13+ (API 33): POST_NOTIFICATIONS é permissão runtime.
+    // Verifica antes de pedir — no Android 14 o diálogo só aparece uma vez;
+    // se o usuário recusar, requestNotificationsPermission() não reabre o diálogo.
+    final AndroidFlutterLocalNotificationsPlugin? androidPluginPerm =
+        flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+    final bool? jaTemPermissao =
+        await androidPluginPerm?.areNotificationsEnabled();
+    if (jaTemPermissao == false) {
+      await androidPluginPerm?.requestNotificationsPermission();
+    }
 
     registerWebCloseListener();
     _alertService.startMonitoring();
@@ -695,7 +717,7 @@ class _MainNavigatorState extends State<MainNavigator>
         idNotificacao: novoAlerta.id.hashCode,
         titulo: "✈️ Oportunidade: $programa",
         corpo: trecho,
-        payload: novoAlerta.id,
+        payload: novoAlerta.trecho,
       );
 
       _alertService.carregarDoCache();
@@ -793,8 +815,16 @@ class _AlertsScreenState extends State<AlertsScreen>
     // Garante que eventos de cold-start disparados em main() antes do
     // widget montar não se percam por falta de listener.
     _alertService.tapStream.listen((String trechoClicado) {
-      debugPrint('👆 [WARM-TAP] Tap recebido via stream: $trechoClicado');
-      _ativarBlurDourado(trechoClicado);
+      debugPrint('👆 [WARM-TAP] Tap recebido: $trechoClicado | carregando: $_isCarregando');
+      // Se a lista ainda está carregando, enfileira para drenar quando os cards chegarem.
+      // Se já está pronta, acende direto — o addPostFrameCallback dentro de
+      // _ativarBlurDourado garante que o setState do dourado vem depois de qualquer
+      // rebuild pendente.
+      if (_isCarregando) {
+        _alertService.setPendingHighlight(trechoClicado);
+      } else {
+        _ativarBlurDourado(trechoClicado);
+      }
     });
 
     // ── Cold start: verifica se a notificação abriu o app ────────────────
@@ -837,20 +867,30 @@ class _AlertsScreenState extends State<AlertsScreen>
   }
 
   void _ativarBlurDourado(String payload) {
-    if (mounted) {
-      final String termoBusca = _normalizar(payload);
-      debugPrint("✨ [UI-UX] Dourado ativado para: $termoBusca");
+    if (!mounted) return;
+    final String termoBusca = _normalizar(payload);
+    if (termoBusca.isEmpty) return;
+
+    // addPostFrameCallback garante que qualquer setState de carregamento
+    // da lista já terminou antes de aplicar o destaque.
+    // Sem isso, o setState do alertStream pode "atropelar" o _highlightedTrecho
+    // e o card renderiza sem o dourado mesmo com o valor correto.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final bool existe = _listaAlertasFiltrados.any((a) =>
+          _normalizar(a.trecho).contains(termoBusca) ||
+          _normalizar(a.id).contains(termoBusca));
+      debugPrint("[DOURADO] buscando=\"$termoBusca\" | existe: $existe | cards: \${_listaAlertasFiltrados.length}");
 
       setState(() => _highlightedTrecho = termoBusca);
 
-      Future<void>.delayed(const Duration(seconds: 15), () {
-        // 🚀 A MÁGICA: Só apaga se for o MESMO destaque!
-        // Evita que o timer de um clique velho apague o clique novo.
+      Future<void>.delayed(const Duration(seconds: 20), () {
         if (mounted && _highlightedTrecho == termoBusca) {
           setState(() => _highlightedTrecho = null);
         }
       });
-    }
+    });
   }
 
   // ── Gist config: maintenance, announcement, min_version ──────────────────
@@ -931,6 +971,8 @@ class _AlertsScreenState extends State<AlertsScreen>
                   final Uri uri = Uri.parse(playStoreUrl);
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else {
+                    await launchUrl(uri, mode: LaunchMode.platformDefault);
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -1390,9 +1432,15 @@ class _AlertCardState extends State<AlertCard> {
   Future<void> _abrirLink() async {
     if (widget.alerta.link == null || widget.alerta.link!.isEmpty) return;
     final Uri url = Uri.parse(widget.alerta.link!);
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
+    // Android 14+: externalApplication pode falhar em alguns launchers.
+    // Tenta externalApplication primeiro; cai em platformDefault como fallback.
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+      }
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Não foi possível abrir o link.")),
@@ -1468,7 +1516,11 @@ class _AlertCardState extends State<AlertCard> {
     final Uri url = Uri.parse(urlAgencia);
 
     try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
