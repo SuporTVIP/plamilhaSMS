@@ -2,154 +2,123 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Define o modo de economia do sistema baseado no horário.
-class EconomyMode {
-  /// Se o modo de economia está ativado.
-  final bool enabled;
-
-  /// Horário de início do modo de economia (ex: "22:30").
-  final String startTime;
-
-  /// Horário de término do modo de economia (ex: "06:00").
-  final String endTime;
-
-  /// Multiplicador para o intervalo de polling durante o modo de economia.
-  final int multiplier;
-
-  /// Construtor padrão para [EconomyMode].
-  const EconomyMode({
-    required this.enabled,
-    required this.startTime,
-    required this.endTime,
-    required this.multiplier,
-  });
-
-  /// Cria uma instância de [EconomyMode] a partir de um JSON.
-  factory EconomyMode.fromJson(Map<String, dynamic>? json) {
-    if (json == null) {
-      return const EconomyMode(
-        enabled: false,
-        startTime: "22:30",
-        endTime: "06:00",
-        multiplier: 1,
-      );
-    }
-    return EconomyMode(
-      enabled: json['enabled'] ?? false,
-      startTime: json['start_time'] ?? "22:30",
-      endTime: json['end_time'] ?? "06:00",
-      multiplier: json['multiplier'] ?? 4,
-    );
-  }
-
-  /// Verifica se o horário atual está dentro do período de economia.
-  bool isEconomyTime(DateTime now) {
-    if (!enabled) return false;
-    try {
-      final int startMins = _toMinutes(startTime);
-      final int endMins = _toMinutes(endTime);
-      final int currentMins = now.hour * 60 + now.minute;
-
-      if (startMins > endMins) {
-        return currentMins >= startMins || currentMins <= endMins;
-      } else {
-        return currentMins >= startMins && currentMins <= endMins;
-      }
-    } catch (e) {
-      return false;
-    }
-  }
-
-  int _toMinutes(String time) {
-    final List<String> parts = time.split(':');
-    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
-  }
-}
-
-/// Configuração de descoberta obtida do servidor.
+/// Configuração central do sistema, lida do Gist.
+///
+/// Campos vivos:
+///   gas_url, status, whatsapp_group_balcao_url,
+///   maintenance_mode, min_version, cache_ttl_hours,
+///   announcement, push_enabled, sms_blacklist,
+///   whatsapp_group_vip_url
+///
+/// Campos removidos (legado do Workmanager):
+///   polling_interval_seconds, economy_mode, _comment, _notes
 class DiscoveryConfig {
-  /// URL do Google Apps Script.
+  /// URL do Google Apps Script — usada por todos os serviços Dart e pelo Kotlin.
   final String gasUrl;
 
-  /// Status do sistema (ex: 'active').
+  /// 'active' = sistema ativo. Qualquer outro valor desativa o AeroportoService.
   final String status;
 
-  /// Intervalo padrão de polling em segundos.
-  final int pollingIntervalSeconds;
-
-  /// Configurações do modo de economia.
-  final EconomyMode economyMode;
-
-  /// URL do grupo de WhatsApp para o balcão.
+  /// URL do grupo de WhatsApp do balcão.
   final String whatsappGroupUrl;
 
-  /// Construtor padrão para [DiscoveryConfig].
+  /// URL do grupo de WhatsApp VIP (diferente do balcão).
+  final String whatsappGroupVipUrl;
+
+  /// Modo de manutenção: exibe banner no feed sem precisar de update do APK.
+  final bool maintenanceMode;
+
+  /// Versão mínima aceita. Se menor, o app deve avisar sobre atualização.
+  final String minVersion;
+
+  /// Quantas horas o cache de alertas dura. Padrão: 24.
+  final int cacheTtlHours;
+
+  /// Banner exibido no topo do feed. Vazio = sem banner.
+  final String announcement;
+
+  /// Killswitch de push. false = SW web não exibe notificações.
+  final bool pushEnabled;
+
+  /// Palavras que o SmsReceiver.kt usa para bloquear spam.
+  /// Atualizado pelo Gist sem precisar de update do APK.
+  final List<String> smsBlacklist;
+
   const DiscoveryConfig({
     required this.gasUrl,
     required this.status,
-    this.pollingIntervalSeconds = 90,
-    required this.economyMode,
     required this.whatsappGroupUrl,
+    this.whatsappGroupVipUrl = '',
+    this.maintenanceMode = false,
+    this.minVersion = '0.1.0',
+    this.cacheTtlHours = 24,
+    this.announcement = '',
+    this.pushEnabled = true,
+    this.smsBlacklist = const [],
   });
 
-  /// Cria uma instância de [DiscoveryConfig] a partir de um JSON.
   factory DiscoveryConfig.fromJson(Map<String, dynamic> json) {
     return DiscoveryConfig(
-      gasUrl: json['gas_url'],
-      status: json['status'],
-      pollingIntervalSeconds: json['polling_interval_seconds'] ?? 1800,
-      economyMode: EconomyMode.fromJson(json['economy_mode']),
-      whatsappGroupUrl: json['whatsapp_group_balcao_url'] ?? 'https://chat.whatsapp.com/G5kPwwdBvagEzBKCSo0TEX', 
+      gasUrl: json['gas_url'] ?? '',
+      status: json['status'] ?? 'active',
+      whatsappGroupUrl: json['whatsapp_group_balcao_url']
+          ?? 'https://chat.whatsapp.com/G5kPwwdBvagEzBKCSo0TEX',
+      whatsappGroupVipUrl: json['whatsapp_group_vip_url'] ?? '',
+      maintenanceMode: json['maintenance_mode'] ?? false,
+      minVersion: json['min_version'] ?? '0.1.0',
+      cacheTtlHours: json['cache_ttl_hours'] ?? 24,
+      announcement: json['announcement'] ?? '',
+      pushEnabled: json['push_enabled'] ?? true,
+      smsBlacklist: List<String>.from(json['sms_blacklist'] ?? []),
     );
   }
 
-  /// Verifica se o sistema está ativo.
   bool get isActive => status == 'active';
-
-  /// Retorna o intervalo de polling atual, considerando o modo de economia.
-  int get currentPollingInterval {
-    if (economyMode.isEconomyTime(DateTime.now())) {
-      return pollingIntervalSeconds * economyMode.multiplier;
-    }
-    return pollingIntervalSeconds;
-  }
 }
 
-/// Serviço responsável por obter configurações dinâmicas do servidor.
+/// Serviço responsável por obter configurações dinâmicas do Gist.
 class DiscoveryService {
-  // 🚀 SINGLETON: Garante que só existe 1 serviço rodando e economiza RAM
   static final DiscoveryService _instance = DiscoveryService._internal();
-
-  /// Fábrica que retorna a instância única do serviço.
   factory DiscoveryService() => _instance;
-
   DiscoveryService._internal();
 
-  static const String _discoveryUrl = "https://gist.githubusercontent.com/SuporTVIP/ffb616b4d3b24af5071c10c9be2e6895/raw/sms_discovery.json";
+  static const String _discoveryUrl =
+      "https://gist.githubusercontent.com/SuporTVIP/ffb616b4d3b24af5071c10c9be2e6895/raw/sms_discovery.json";
+
   static const String _keyCache = "DISCOVERY_CACHE_V2";
 
-  // 🚀 COFRE NA MEMÓRIA: Guarda a resposta para acesso instantâneo
+  /// Chaves gravadas no SharedPreferences para o Kotlin ler.
+  /// O Kotlin acessa como "flutter.<chave>" no SharedPreferences nativo.
+  static const String keyGasUrl       = "DISCOVERY_GAS_URL";
+  static const String keySmsBlacklist = "DISCOVERY_SMS_BLACKLIST";
+
   DiscoveryConfig? _cachedConfig;
 
-  /// Obtém a configuração de descoberta, priorizando o cache em memória e depois o local.
   Future<DiscoveryConfig?> getConfig() async {
-    // Se já baixou hoje, retorna na hora sem gastar internet!
     if (_cachedConfig != null) return _cachedConfig;
 
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    
+
     try {
-      final String urlWithNoCache = "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
-      final http.Response response = await http.get(Uri.parse(urlWithNoCache)).timeout(const Duration(seconds: 10));
+      final String url =
+          "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
+      final http.Response response =
+          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         await prefs.setString(_keyCache, response.body);
-        _cachedConfig = DiscoveryConfig.fromJson(jsonDecode(response.body));
+        final Map<String, dynamic> json = jsonDecode(response.body);
+        _cachedConfig = DiscoveryConfig.fromJson(json);
+
+        // Grava as chaves que o Kotlin precisa para não precisar chamar o Gist
+        await prefs.setString(keyGasUrl, _cachedConfig!.gasUrl);
+        await prefs.setString(keySmsBlacklist,
+            jsonEncode(_cachedConfig!.smsBlacklist));
+
         return _cachedConfig;
       }
     } catch (e) {
-      // ignore: avoid_print
-      print("⚠️ Erro ao acessar o Discovery na rede. Tentando cache local...");
+      print("⚠️ [DISCOVERY] Rede indisponível. Usando cache local...");
     }
 
     final String? cachedJson = prefs.getString(_keyCache);
@@ -157,7 +126,9 @@ class DiscoveryService {
       _cachedConfig = DiscoveryConfig.fromJson(jsonDecode(cachedJson));
       return _cachedConfig;
     }
-    
+
     return null;
   }
+
+  void invalidateCache() => _cachedConfig = null;
 }
