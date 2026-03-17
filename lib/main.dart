@@ -143,25 +143,39 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       ),
     );
 
+    final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
+    final String statusSom = somAtivo ? "🔊 SONORA" : "🔕 SILENCIOSA";
+    final String idCanal = somAtivo
+        ? 'emissao_vip_v3'
+        : 'emissao_vip_v3_silent';
+    debugPrint(
+      "🔔 [FCM-UX] Preparando Notificação $statusSom via canal: $idCanal",
+    );
+
     await flutterLocalNotificationsPlugin.show(
       id: novoAlerta.id.hashCode,
       title: "✈️ Oportunidade: $programa",
       body: trecho,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          'emissao_vip_v3',
+          idCanal,
           'Emissões FãMilhasVIP',
-          importance: Importance.max,
+          importance: somAtivo ? Importance.max : Importance.high,
           priority: Priority.high,
-          sound: RawResourceAndroidNotificationSound('alerta'),
-          playSound: true,
+          sound: somAtivo
+              ? const RawResourceAndroidNotificationSound('alerta')
+              : null,
+          playSound: somAtivo,
         ),
       ),
-      payload: novoAlerta.trecho,
+      payload:
+          novoAlerta.id, // 🚀 Use o ID para o blur dourado funcionar sempre
     );
-    debugPrint("✨ [FCM-UX] Notificação exibida com sucesso!");
+    debugPrint(
+      "✨ [FCM-UX] Notificação (${somAtivo ? 'SONORA' : 'MUDA'}) exibida!",
+    );
   } catch (e) {
-    debugPrint("❌ [FCM-UX] Erro fatal ao tentar exibir notificação nativa: $e");
+    debugPrint("❌ [FCM-UX] Erro: $e");
   }
 }
 
@@ -209,14 +223,27 @@ void main() async {
     final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
         flutterLocalNotificationsPlugin
             .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
+              AndroidFlutterLocalNotificationsPlugin
+            >();
+
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
         'emissao_vip_v3',
-        'Emissões FãMilhasVIP',
+        'Alertas Sonoros',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
         playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    // 🔕 CANAL SILENCIOSO (Novo ID)
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'emissao_vip_v3_silent', // ID Diferente
+        'Alertas Silenciosos',
+        importance: Importance.high,
+        playSound: false,
         enableVibration: true,
       ),
     );
@@ -617,6 +644,25 @@ class _MainNavigatorState extends State<MainNavigator>
     SmsScreen(),
   ];
 
+  // // 🚀 Novo método para lidar com a permissão de forma assíncrona
+  // Future<void> _pedirPermissaoNotificacao() async {
+  //   if (!kIsWeb) {
+  //     final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+  //         flutterLocalNotificationsPlugin
+  //             .resolvePlatformSpecificImplementation<
+  //               AndroidFlutterLocalNotificationsPlugin
+  //             >();
+
+  //     // Agora o 'await' é permitido porque esta função é 'async'
+  //     final bool? concedida = await androidPlugin
+  //         ?.requestNotificationsPermission();
+
+  //     debugPrint(
+  //       "🔔 [PERMISSÃO] O usuário aceitou as notificações? $concedida",
+  //     );
+  //   }
+  // }
+
   /// Dispara uma notificação local.
   Future<void> _tocarNotificacaoLocal({
     required int idNotificacao,
@@ -624,18 +670,23 @@ class _MainNavigatorState extends State<MainNavigator>
     required String corpo,
     String? payload,
   }) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
+
     await flutterLocalNotificationsPlugin.show(
       id: idNotificacao,
       title: titulo,
       body: corpo,
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          'emissao_vip_v3',
+          somAtivo ? 'emissao_vip_v3' : 'emissao_vip_v3_silent',
           'Emissões FãMilhasVIP',
-          importance: Importance.max,
+          importance: somAtivo ? Importance.max : Importance.high,
           priority: Priority.high,
-          sound: RawResourceAndroidNotificationSound('alerta'),
-          playSound: true,
+          sound: somAtivo
+              ? const RawResourceAndroidNotificationSound('alerta')
+              : null,
+          playSound: somAtivo,
         ),
       ),
       payload: payload,
@@ -647,24 +698,38 @@ class _MainNavigatorState extends State<MainNavigator>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Android 13+ (API 33): POST_NOTIFICATIONS é permissão runtime.
-    // Verifica antes de pedir — no Android 14 o diálogo só aparece uma vez;
-    // se o usuário recusar, requestNotificationsPermission() não reabre o diálogo.
-    final AndroidFlutterLocalNotificationsPlugin? androidPluginPerm =
-        flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-    final bool? jaTemPermissao =
-        await androidPluginPerm?.areNotificationsEnabled();
-    if (jaTemPermissao == false) {
-      await androidPluginPerm?.requestNotificationsPermission();
-    }
+    // 🚀 Chamamos a função de permissão aqui.
+    // Ela roda em paralelo e não trava a abertura do app.
+    _configurarNotificacoes();
 
     registerWebCloseListener();
     _alertService.startMonitoring();
 
     if (!kIsWeb) {
       _listenToForegroundPushes();
+    }
+  }
+
+  // 🚀 Novo método ASSÍNCRONO para resolver o problema do S23+
+  Future<void> _configurarNotificacoes() async {
+    if (kIsWeb) return;
+
+    final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
+        flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
+
+    // No Android 13+ (S23+), precisamos checar e pedir explicitamente
+    if (androidPlugin != null) {
+      final bool? permitida = await androidPlugin.areNotificationsEnabled();
+
+      if (permitida == null || !permitida) {
+        await androidPlugin.requestNotificationsPermission();
+        debugPrint("🔔 [PERMISSÃO] Pedindo autorização ao usuário...");
+      } else {
+        debugPrint("✅ [PERMISSÃO] Notificações já estão autorizadas.");
+      }
     }
   }
 
@@ -713,14 +778,24 @@ class _MainNavigatorState extends State<MainNavigator>
         );
       }
 
-      await _tocarNotificacaoLocal(
-        idNotificacao: novoAlerta.id.hashCode,
-        titulo: "✈️ Oportunidade: $programa",
-        corpo: trecho,
-        payload: novoAlerta.trecho,
-      );
+      // ... dentro do listen do FirebaseMessaging.onMessage
+      final bool somAtivo =
+          prefs.getBool('SOUND_ENABLED') ?? true; // 🚀 Lendo a preferência
 
-      _alertService.carregarDoCache();
+      if (somAtivo) {
+        await _tocarNotificacaoLocal(
+          idNotificacao: novoAlerta.id.hashCode,
+          titulo: "✈️ Oportunidade: $programa",
+          corpo: trecho,
+          payload: novoAlerta.trecho,
+        );
+      } else {
+        debugPrint(
+          "🔕 [FOREGROUND] Som está desativado, notificações silenciosas serão exibidas.",
+        );
+        _alertService.carregarDoCache();
+      }
+
       debugPrint("✅ [FOREGROUND] Feed atualizado via cache.");
     });
   }
@@ -778,8 +853,8 @@ class _AlertsScreenState extends State<AlertsScreen>
   String? _highlightedTrecho;
 
   // ── Gist config state ────────────────────────────────────────────────
-  bool   _maintenanceMode = false; // card de manutenção no topo do feed
-  String _announcement    = '';    // card de aviso dinâmico no topo do feed
+  bool _maintenanceMode = false; // card de manutenção no topo do feed
+  String _announcement = ''; // card de aviso dinâmico no topo do feed
 
   // 🚀 NOVO: Normalizador Indestrutível
   String _normalizar(String texto) {
@@ -807,7 +882,7 @@ class _AlertsScreenState extends State<AlertsScreen>
     _loadSoundPreference();
     _carregarFiltros();
     _verificarNotificacaoDeAbertura();
-    _carregarConfigGist();  // maintenance_mode, announcement, min_version
+    _carregarConfigGist(); // maintenance_mode, announcement, min_version
   }
 
   void _verificarNotificacaoDeAbertura() {
@@ -815,7 +890,9 @@ class _AlertsScreenState extends State<AlertsScreen>
     // Garante que eventos de cold-start disparados em main() antes do
     // widget montar não se percam por falta de listener.
     _alertService.tapStream.listen((String trechoClicado) {
-      debugPrint('👆 [WARM-TAP] Tap recebido: $trechoClicado | carregando: $_isCarregando');
+      debugPrint(
+        '👆 [WARM-TAP] Tap recebido: $trechoClicado | carregando: $_isCarregando',
+      );
       // Se a lista ainda está carregando, enfileira para drenar quando os cards chegarem.
       // Se já está pronta, acende direto — o addPostFrameCallback dentro de
       // _ativarBlurDourado garante que o setState do dourado vem depois de qualquer
@@ -878,10 +955,14 @@ class _AlertsScreenState extends State<AlertsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      final bool existe = _listaAlertasFiltrados.any((a) =>
-          _normalizar(a.trecho).contains(termoBusca) ||
-          _normalizar(a.id).contains(termoBusca));
-      debugPrint("[DOURADO] buscando=\"$termoBusca\" | existe: $existe | cards: \${_listaAlertasFiltrados.length}");
+      final bool existe = _listaAlertasFiltrados.any(
+        (a) =>
+            _normalizar(a.trecho).contains(termoBusca) ||
+            _normalizar(a.id).contains(termoBusca),
+      );
+      debugPrint(
+        "[DOURADO] buscando=\"$termoBusca\" | existe: $existe | cards: \${_listaAlertasFiltrados.length}",
+      );
 
       setState(() => _highlightedTrecho = termoBusca);
 
@@ -902,7 +983,7 @@ class _AlertsScreenState extends State<AlertsScreen>
     if (mounted) {
       setState(() {
         _maintenanceMode = config.maintenanceMode;
-        _announcement    = config.announcement.trim();
+        _announcement = config.announcement.trim();
       });
     }
 
@@ -942,17 +1023,28 @@ class _AlertsScreenState extends State<AlertsScreen>
       context: context,
       barrierDismissible: false, // não fecha tocando fora
       builder: (_) => PopScope(
-        canPop: false,           // não fecha com botão voltar
+        canPop: false, // não fecha com botão voltar
         child: AlertDialog(
           backgroundColor: AppTheme.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Row(
             children: [
-              Icon(Icons.system_update_rounded, color: AppTheme.accent, size: 22),
+              Icon(
+                Icons.system_update_rounded,
+                color: AppTheme.accent,
+                size: 22,
+              ),
               SizedBox(width: 10),
-              Text('Atualização necessária',
-                  style: TextStyle(color: Colors.white, fontSize: 16,
-                      fontWeight: FontWeight.bold)),
+              Text(
+                'Atualização necessária',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
           content: Text(
@@ -979,13 +1071,18 @@ class _AlertsScreenState extends State<AlertsScreen>
                   backgroundColor: AppTheme.accent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
                 icon: const Icon(Icons.open_in_new, size: 18),
-                label: const Text('ATUALIZAR AGORA',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold, letterSpacing: 1)),
+                label: const Text(
+                  'ATUALIZAR AGORA',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
               ),
             ),
           ],
@@ -1294,10 +1391,14 @@ class _AlertsScreenState extends State<AlertsScreen>
                 children: [
                   Icon(Icons.flight, size: 64, color: AppTheme.border),
                   const SizedBox(height: 16),
-                  const Text('Nenhuma emissão encontrada.',
-                      style: TextStyle(color: AppTheme.muted)),
-                  const Text('Verifique seus filtros ou aguarde.',
-                      style: TextStyle(color: AppTheme.muted, fontSize: 12)),
+                  const Text(
+                    'Nenhuma emissão encontrada.',
+                    style: TextStyle(color: AppTheme.muted),
+                  ),
+                  const Text(
+                    'Verifique seus filtros ou aguarde.',
+                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -1320,22 +1421,23 @@ class _AlertsScreenState extends State<AlertsScreen>
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (BuildContext context, int index) {
-                final Alert alerta = _listaAlertasFiltrados[index];
-                final String trechoNorm = _normalizar(alerta.trecho);
-                final String idNorm     = _normalizar(alerta.id);
-                final bool isGolden = _highlightedTrecho != null &&
-                    (trechoNorm.contains(_highlightedTrecho!) ||
-                     idNorm.contains(_highlightedTrecho!));
-                return AlertCard(
-                  key: ValueKey(alerta.id),
-                  alerta: alerta,
-                  isHighlighted: isGolden,
-                );
-              },
-              childCount: _listaAlertasFiltrados.length,
-            ),
+            delegate: SliverChildBuilderDelegate((
+              BuildContext context,
+              int index,
+            ) {
+              final Alert alerta = _listaAlertasFiltrados[index];
+              final String trechoNorm = _normalizar(alerta.trecho);
+              final String idNorm = _normalizar(alerta.id);
+              final bool isGolden =
+                  _highlightedTrecho != null &&
+                  (trechoNorm.contains(_highlightedTrecho!) ||
+                      idNorm.contains(_highlightedTrecho!));
+              return AlertCard(
+                key: ValueKey(alerta.id),
+                alerta: alerta,
+                isHighlighted: isGolden,
+              );
+            }, childCount: _listaAlertasFiltrados.length),
           ),
         ),
       ],
@@ -1354,16 +1456,20 @@ class _AlertsScreenState extends State<AlertsScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.build_circle_outlined,
-              color: AppTheme.yellow, size: 20),
+          const Icon(
+            Icons.build_circle_outlined,
+            color: AppTheme.yellow,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
               'Sistema em manutenção. Algumas funcionalidades podem estar limitadas.',
               style: TextStyle(
-                  color: AppTheme.yellow,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500),
+                color: AppTheme.yellow,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -1384,17 +1490,17 @@ class _AlertsScreenState extends State<AlertsScreen>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.campaign_outlined,
-              color: AppTheme.accent, size: 20),
+          const Icon(Icons.campaign_outlined, color: AppTheme.accent, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               _announcement,
               style: const TextStyle(
-                  color: AppTheme.text,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4),
+                color: AppTheme.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -2214,10 +2320,10 @@ class _SmsScreenState extends State<SmsScreen> {
           Text(
             "SMS",
             style: TextStyle(
-              fontWeight: FontWeight.w300,
+              fontWeight: FontWeight.w900,
               color: Colors.white,
               letterSpacing: 2,
-              fontSize: 16,
+              fontSize: 20,
             ),
           ),
           Text(
@@ -2226,7 +2332,7 @@ class _SmsScreenState extends State<SmsScreen> {
               fontWeight: FontWeight.w900,
               color: AppTheme.accent,
               letterSpacing: 2,
-              fontSize: 16,
+              fontSize: 20,
             ),
           ),
         ],
@@ -2562,7 +2668,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
           Text(
             "SESSÃO",
             style: TextStyle(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w900,
               color: Colors.white,
               letterSpacing: 2,
               fontSize: 20,
