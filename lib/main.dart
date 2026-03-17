@@ -265,10 +265,24 @@ void main() async {
   runApp(const MilhasAlertApp());
 
   // Web: permissão e token em background
+  // Web: permissão e token em background
   if (kIsWeb) {
     unawaited(_configurarPushWeb());
     iniciarReceptorWebHighlight((String trecho) {
-      AlertService().setPendingHighlight(trecho);
+      debugPrint(
+        "🌐 [WEB] Clique recebido! Ignorando timer e forçando PULL...",
+      );
+
+      // 🚀 Chama o forceSync diretamente, furando o bloqueio de 5 min!
+      AlertService().forceSync(silencioso: true).then((_) {
+        AlertService().setPendingHighlight(trecho);
+
+        // Drena a fila logo após o sync terminar para o card acender na hora
+        if (AlertService().pendingHighlightCount > 0) {
+          AlertService()
+              .consumePendingHighlight(); // (A lógica de acender fica a cargo da tela, mas já engatilhamos aqui)
+        }
+      });
     });
   }
 }
@@ -1326,17 +1340,32 @@ class _AlertsScreenState extends State<AlertsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('📱 App abriu! Carregando cache...');
-      _alertService.carregarDoCache().then((_) {
-        if (!mounted) return;
-        if (_alertService.pendingHighlightCount > 0) {
-          debugPrint(
-            '✨ [RESUME] \${_alertService.pendingHighlightCount} pendentes — drenando...',
-          );
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _drenaFilaDourado();
-          });
-        }
+      if (kIsWeb) {
+        // 🌐 NA WEB: Força a busca HTTP imediata para não ter buracos!
+        debugPrint('🌐 [WEB] Aba focada! Forçando PULL do servidor...');
+        _alertService.forceSync(silencioso: true).then((_) {
+          _verificarPendenciasDouradas();
+        });
+      } else {
+        // 📱 NO MOBILE: O background já gravou no disco. Leitura instantânea!
+        debugPrint(
+          '📱 [MOBILE] App abriu! Carregando cache local ultra-rápido...',
+        );
+        _alertService.carregarDoCache().then((_) {
+          _verificarPendenciasDouradas();
+        });
+      }
+    }
+  }
+
+  void _verificarPendenciasDouradas() {
+    if (!mounted) return;
+    if (_alertService.pendingHighlightCount > 0) {
+      debugPrint(
+        '✨ [RESUME] ${_alertService.pendingHighlightCount} pendentes — drenando...',
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _drenaFilaDourado();
       });
     }
   }
