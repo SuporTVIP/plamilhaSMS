@@ -50,7 +50,7 @@ void _onBackgroundNotificationTap(NotificationResponse response) {
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   debugPrint(
-    "🚨 [FCM-BACKGROUND] ACORDOU O MOTOR INVISÍVEL! Dados recebidos: ${message.data}",
+    "🚨 [FCM-BG] ACORDOU O MOTOR INVISÍVEL! Dados recebidos: ${message.data}",
   );
 
   final String action = message.data['action'] ?? '';
@@ -65,7 +65,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final SharedPreferences prefs = await SharedPreferences.getInstance();
   await prefs.reload();
-  final UserFilters filtros = await UserFilters.load();
 
   final String programa = message.data['programa'] ?? '';
   final String trecho = message.data['trecho'] ?? '';
@@ -73,21 +72,14 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   debugPrint("🔍 [FCM-RAIO-X] Analisando Voo: $programa | $trecho");
 
-  // 1. Verifica filtros ANTES de gastar qualquer recurso
-  if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
-    debugPrint(
-      "⛔ [FCM-PORTEIRO] BARRADO! O Voo não atende aos critérios do usuário.",
-    );
-    return;
-  }
-  debugPrint(
-    "✅ [FCM-PORTEIRO] APROVADO! O Voo passou no filtro da tela apagada.",
-  );
+  // =====================================================================
+  // 🚀 PASSO 1 E 2: SALVAR PRIMEIRO (A Fonte da Verdade)
+  // =====================================================================
 
-  // 2. Monta o objeto Alert COMPLETO do payload — sem usar a internet!
+  // Monta o objeto Alert COMPLETO do payload — sem usar a internet!
   final Alert novoAlerta = Alert.fromPush(message.data);
 
-  // 3. Salva no cache local (ALERTS_CACHE_V2)
+  // Salva no cache local (ALERTS_CACHE_V2)
   final List<String> cacheRaw = prefs.getStringList('ALERTS_CACHE_V2') ?? [];
 
   // Proteção contra duplicatas
@@ -103,19 +95,40 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint(
       "♻️ [FCM-CACHE] Descartado Silenciosamente. Este voo já existe no banco de dados local.",
     );
-    return;
+  } else {
+    // 💾 MÁGICA: Salva no cache independente do filtro!
+    debugPrint("💾 [FCM-CACHE] Salvando passagem INÉDITA no Cache Local...");
+    cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
+    await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
+
+    // Grava a data para a limpeza diária em carregarDoCache()
+    await prefs.setString(
+      'CACHE_DATE_V2',
+      DateTime.now().toIso8601String().split('T')[0],
+    );
   }
 
-  debugPrint("💾 [FCM-CACHE] Salvando passagem INÉDITA no Cache Local...");
-  cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
-  await prefs.setStringList('ALERTS_CACHE_V2', cacheRaw.take(100).toList());
-  // Grava a data para a limpeza diária em carregarDoCache()
-  await prefs.setString(
-    'CACHE_DATE_V2',
-    DateTime.now().toIso8601String().split('T')[0],
+  // =====================================================================
+  // 🚀 PASSO 3: O PORTEIRO (Decide se toca a sirene e mostra no celular)
+  // =====================================================================
+
+  final UserFilters filtros = await UserFilters.load();
+
+  // Verifica filtros APÓS ter garantido que o dado está salvo
+  if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+    debugPrint(
+      "⛔ [FCM-PORTEIRO] BARRADO! O Voo não atende aos critérios do usuário (Mas já está salvo).",
+    );
+    return; // 🛑 Aborta a execução aqui, impedindo o pop-up nativo do Android
+  }
+  debugPrint(
+    "✅ [FCM-PORTEIRO] APROVADO! O Voo passou no filtro da tela apagada.",
   );
 
-  // 4. Toca a sirene dourada e mostra notificação
+  // =====================================================================
+  // 🚀 PASSO 4: EXIBIÇÃO DA NOTIFICAÇÃO NATIVO
+  // =====================================================================
+
   debugPrint(
     "🔔 [FCM-UX] Disparando Sirene Dourada e Notificação visual do Android...",
   );
@@ -735,26 +748,45 @@ class _MainNavigatorState extends State<MainNavigator>
 
   void _listenToForegroundPushes() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+      // 🚀 LOG 1: Recebimento e inspeção inicial do pacote
+      debugPrint("📥 [FOREGROUND] Mensagem recebida com o app ABERTO!");
+      debugPrint("📦 [FOREGROUND] Payload bruto: ${message.data}");
+
       final String action = message.data['action'] ?? '';
       final String tipo = message.data['tipo'] ?? '';
 
-      if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') return;
+      debugPrint("🔍 [FOREGROUND] Ação: '$action' | Tipo: '$tipo'");
 
-      final UserFilters filtros = await UserFilters.load();
+      if (action != 'SYNC_ALERTS' && tipo != 'NOVO_ALERTA') {
+        // 🚀 LOG 2: Descarte rápido
+        debugPrint(
+          "🤷‍♂️ [FOREGROUND] Ignorado. Não é uma notificação de passagem válida.",
+        );
+        return;
+      }
+
       final String programa = message.data['programa'] ?? '';
       final String trecho = message.data['trecho'] ?? '';
       final String detalhes = message.data['detalhes'] ?? '';
 
-      if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
-        debugPrint("⛔ [FOREGROUND] Push bloqueado pelos filtros.");
-        return;
-      }
+      debugPrint("🛫 [FOREGROUND] Avaliando Voo: $programa | $trecho");
 
+      // =====================================================================
+      // 🚀 PASSO 1 E 2: SALVAR PRIMEIRO INCONDICIONALMENTE (A Fonte da Verdade)
+      // =====================================================================
+
+      debugPrint("✅ [FOREGROUND] Convertendo para objeto Alert...");
       final Alert novoAlerta = Alert.fromPush(message.data);
+      debugPrint("🆔 [FOREGROUND] ID do alerta extraído: ${novoAlerta.id}");
+
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final List<String> cacheRaw =
           prefs.getStringList('ALERTS_CACHE_V2') ?? [];
 
+      // 🚀 LOG 5: Verificação de duplicatas
+      debugPrint(
+        "📂 [FOREGROUND] Verificando se já existe no cache (total atual: ${cacheRaw.length} alertas)...",
+      );
       final bool jaExiste = cacheRaw.any((String raw) {
         try {
           return jsonDecode(raw)['id'] == novoAlerta.id;
@@ -764,6 +796,10 @@ class _MainNavigatorState extends State<MainNavigator>
       });
 
       if (!jaExiste) {
+        // 🚀 LOG 6: Escrita no banco local
+        debugPrint(
+          "✨ [FOREGROUND] Alerta INÉDITO! Gravando no banco de dados local...",
+        );
         cacheRaw.insert(0, jsonEncode(novoAlerta.toJson()));
         await prefs.setStringList(
           'ALERTS_CACHE_V2',
@@ -774,29 +810,69 @@ class _MainNavigatorState extends State<MainNavigator>
           DateTime.now().toIso8601String().split('T')[0],
         );
         debugPrint(
-          "💾 [FOREGROUND] Alert salvo no cache: ${novoAlerta.trecho}",
+          "💾 [FOREGROUND] Alert salvo no cache com sucesso: ${novoAlerta.trecho}",
+        );
+      } else {
+        // 🚀 LOG 7: Tratamento de duplicata (implicit else documentado no log)
+        debugPrint(
+          "♻️ [FOREGROUND] Alerta DUPLICADO detectado. Ignorando a gravação para evitar repetição na tela.",
         );
       }
 
-      // ... dentro do listen do FirebaseMessaging.onMessage
+      // 🔄 Atualiza o motor da UI silenciosamente para garantir que a lista fique fresca
+      _alertService.carregarDoCache();
+
+      // =====================================================================
+      // 🚀 PASSO 3: O PORTEIRO (Decide se toca a sirene e mostra o Banner Nativo)
+      // =====================================================================
+
+      // 🚀 LOG 3: Início da checagem de regras de negócio para exibição
+      debugPrint(
+        "⚙️ [FOREGROUND] Carregando filtros atuais do usuário para o Pop-Up...",
+      );
+      final UserFilters filtros = await UserFilters.load();
+
+      if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+        debugPrint(
+          "⛔ [FOREGROUND] Push bloqueado pelos filtros visuais (Mas já salvo no banco!).",
+        );
+        return; // Aborta pop-up nativo superior e sirene
+      }
+
+      // 🚀 LOG 4: Passou nos filtros
+      debugPrint("✅ [FOREGROUND] Voo passou nos filtros de exibição!");
+
+      // 🚀 LOG 8: Verificação do Mute
+      debugPrint(
+        "🔊 [FOREGROUND] Verificando se a sirene está permitida pelo usuário...",
+      );
       final bool somAtivo =
           prefs.getBool('SOUND_ENABLED') ?? true; // 🚀 Lendo a preferência
 
+      debugPrint(
+        "🎛️ [FOREGROUND] Chave de Som atual: ${somAtivo ? 'LIGADA' : 'MUTADA'}",
+      );
+
       if (somAtivo) {
+        // 🚀 LOG 9: Disparo com som
+        debugPrint(
+          "🔔 [FOREGROUND] Acionando o pop-up nativo no topo da tela...",
+        );
         await _tocarNotificacaoLocal(
           idNotificacao: novoAlerta.id.hashCode,
           titulo: "✈️ Oportunidade: $programa",
           corpo: trecho,
-          payload: novoAlerta.trecho,
+          payload:
+              novoAlerta.id, // O ID do alerta para o blur dourado funcionar
         );
       } else {
         debugPrint(
-          "🔕 [FOREGROUND] Som está desativado, notificações silenciosas serão exibidas.",
+          "🔕 [FOREGROUND] Som está desativado, notificações nativas superiores ignoradas.",
         );
-        _alertService.carregarDoCache();
+        // O app já foi atualizado pelo _alertService.carregarDoCache() acima.
       }
 
-      debugPrint("✅ [FOREGROUND] Feed atualizado via cache.");
+      debugPrint("✅ [FOREGROUND] Fluxo finalizado. Feed atualizado via cache.");
     });
   }
 
@@ -844,6 +920,11 @@ class _AlertsScreenState extends State<AlertsScreen>
   final List<Alert> _listaAlertasTodos = [];
   List<Alert> _listaAlertasFiltrados = [];
   bool _isCarregando = true;
+  StreamSubscription<List<Alert>>? _alertSub;
+  final Set<String> _idsExistentes = {};
+  // dentro da sua classe _AlertsScreenState
+  final Map<String, int> _highlightRetryCount = {};
+  static const int _maxHighlightRetries = 10;
 
   UserFilters _filtros = UserFilters();
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -943,30 +1024,56 @@ class _AlertsScreenState extends State<AlertsScreen>
     }
   }
 
+  Map<String, Alert> _alertIndex = {};
+  String _key(String id) => _normalizar(id);
+  void _rebuildIndex() {
+    _alertIndex = {
+      for (final a in _listaAlertasFiltrados) _key(a.id): a,
+      for (final a in _listaAlertasFiltrados) _key(a.trecho): a,
+    };
+  }
+
   void _ativarBlurDourado(String payload) {
     if (!mounted) return;
+
     final String termoBusca = _normalizar(payload);
     if (termoBusca.isEmpty) return;
 
-    // addPostFrameCallback garante que qualquer setState de carregamento
-    // da lista já terminou antes de aplicar o destaque.
-    // Sem isso, o setState do alertStream pode "atropelar" o _highlightedTrecho
-    // e o card renderiza sem o dourado mesmo com o valor correto.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
 
-      final bool existe = _listaAlertasFiltrados.any(
-        (a) =>
-            _normalizar(a.trecho).contains(termoBusca) ||
-            _normalizar(a.id).contains(termoBusca),
-      );
+      final bool existe = _alertIndex.containsKey(termoBusca);
+
       debugPrint(
-        "[DOURADO] buscando=\"$termoBusca\" | existe: $existe | cards: \${_listaAlertasFiltrados.length}",
+        "[DOURADO] buscando=\"$termoBusca\" | existe: $existe | index: ${_alertIndex.length}",
       );
+
+      if (!existe) {
+        // contador de retries
+        final int current = (_highlightRetryCount[termoBusca] ?? 0) + 1;
+        if (current > _maxHighlightRetries) {
+          debugPrint(
+            "[DOURADO] ❌ max retries atingido para $termoBusca — abortando.",
+          );
+          _highlightRetryCount.remove(termoBusca);
+          return;
+        }
+
+        _highlightRetryCount[termoBusca] = current;
+        debugPrint("[DOURADO] ⏳ não encontrado no index, retry $current...");
+
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) _ativarBlurDourado(payload);
+        });
+        return;
+      }
+
+      // ACHOU — limpa contador e aplica highlight
+      _highlightRetryCount.remove(termoBusca);
 
       setState(() => _highlightedTrecho = termoBusca);
 
-      Future<void>.delayed(const Duration(seconds: 20), () {
+      Future.delayed(const Duration(seconds: 20), () {
         if (mounted && _highlightedTrecho == termoBusca) {
           setState(() => _highlightedTrecho = null);
         }
@@ -1132,18 +1239,20 @@ class _AlertsScreenState extends State<AlertsScreen>
     debugPrint("🚀 [UI-MOTOR] Iniciando Motor de Tração e escutando Stream...");
     _alertService.startMonitoring();
 
-    _alertService.alertStream.listen((List<Alert> novosAlertas) async {
+    _alertSub = _alertService.alertStream.listen((
+      List<Alert> novosAlertas,
+    ) async {
       if (mounted) {
         debugPrint(
           "📥 [UI-MOTOR] O Serviço enviou ${novosAlertas.length} alertas recém-chegados.",
         );
 
-        final List<Alert> alertasIneditos = novosAlertas.where((Alert novo) {
-          final bool repetido = _listaAlertasTodos.any(
-            (Alert existente) => existente.id == novo.id,
-          );
-          if (repetido) debugPrint("♻️ [UI-MOTOR] Descartado: ${novo.trecho}");
-          return !repetido;
+        final List<Alert> alertasIneditos = novosAlertas.where((novo) {
+          final key = novo.id;
+          if (_idsExistentes.contains(key)) return false;
+          if (_listaAlertasTodos.any((e) => e.id == key)) return false;
+          _idsExistentes.add(key);
+          return true;
         }).toList();
 
         if (alertasIneditos.isNotEmpty) {
@@ -1154,6 +1263,7 @@ class _AlertsScreenState extends State<AlertsScreen>
           setState(() {
             _listaAlertasTodos.insertAll(0, alertasIneditos);
             _aplicarFiltrosNaTela();
+            _rebuildIndex(); // 🔥 AGORA FUNCIONA
             _isCarregando = false;
           });
         } else {
@@ -1162,9 +1272,13 @@ class _AlertsScreenState extends State<AlertsScreen>
         }
 
         if (_alertService.pendingHighlightCount > 0) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _drenaFilaDourado(),
-          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+
+            Future.delayed(const Duration(milliseconds: 50), () {
+              if (mounted) _drenaFilaDourado();
+            });
+          });
         }
       }
     });
@@ -1178,15 +1292,14 @@ class _AlertsScreenState extends State<AlertsScreen>
   }
 
   void _aplicarFiltrosNaTela() {
-    setState(() {
-      _listaAlertasFiltrados = _listaAlertasTodos
-          .where((Alert a) => _filtros.alertaPassaNoFiltro(a))
-          .toList();
-    });
+    _listaAlertasFiltrados = _listaAlertasTodos
+        .where((Alert a) => _filtros.alertaPassaNoFiltro(a))
+        .toList();
   }
 
   @override
   void dispose() {
+    _alertSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _alertService.stopMonitoring();
     super.dispose();
@@ -1200,8 +1313,11 @@ class _AlertsScreenState extends State<AlertsScreen>
       builder: (BuildContext ctx) => FilterBottomSheet(
         filtrosAtuais: _filtros,
         onFiltrosSalvos: (UserFilters novosFiltros) {
-          _filtros = novosFiltros;
-          _aplicarFiltrosNaTela();
+          setState(() {
+            _filtros = novosFiltros;
+            _aplicarFiltrosNaTela();
+            _rebuildIndex();
+          });
         },
       ),
     );

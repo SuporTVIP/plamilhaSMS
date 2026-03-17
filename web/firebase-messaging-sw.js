@@ -1,6 +1,29 @@
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
 
+// 🚀 1. LISTENER NO TOPO: Nós roubamos o clique antes do Firebase!
+self.addEventListener('notificationclick', (event) => {
+  event.stopImmediatePropagation(); // 🛑 Impede o Firebase de tentar processar esse clique
+  event.notification.close();
+
+  const trecho = event.notification.data?.trecho ?? '';
+  const origin = self.location.origin;
+  const url = trecho ? `${origin}/?highlight=${encodeURIComponent(trecho)}` : `${origin}/`;
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const aba = list.find(c => c.url.startsWith(origin));
+      if (aba) {
+        aba.focus();
+        if (trecho) aba.postMessage({ type: 'PLAMILHAS_HIGHLIGHT', trecho });
+        return;
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
+
+// 2. AGORA SIM inicializamos o Firebase
 firebase.initializeApp({
   apiKey: "AIzaSyAZjnPjOVnbnyzm0pwcUti4aZrWA6F4Fmk",
   authDomain: 'plamilhasvipaddondevsadm.firebaseapp.com',
@@ -11,6 +34,8 @@ firebase.initializeApp({
 });
 
 const messaging = firebase.messaging();
+
+// ... (O resto do seu código de Install, Activate, lerFiltros e onBackgroundMessage continua igual aqui para baixo) ...
 
 // Previne instância fantasma: força substituição imediata da versão anterior
 self.addEventListener('install', (e) => e.waitUntil(self.skipWaiting()));
@@ -95,17 +120,3 @@ messaging.onBackgroundMessage((payload) => {
   });
 });
 
-// Clique: foca aba existente ou abre nova, passando o trecho para o blur dourado
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const trecho = event.notification.data?.trecho ?? '';
-  const origin = self.location.origin;
-  const url = trecho ? `${origin}/?highlight=${encodeURIComponent(trecho)}` : `${origin}/`;
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      const aba = list.find(c => c.url.startsWith(origin));
-      if (aba) { aba.focus(); if (trecho) aba.postMessage({ type: 'PLAMILHAS_HIGHLIGHT', trecho }); return; }
-      return clients.openWindow(url);
-    })
-  );
-});

@@ -286,7 +286,7 @@ class AlertService {
       _lastSyncTime = DateTime.now();
       _alertController.add(alertasDoCache);
       _debugLog(
-        '✅ [SERVICE] \${alertasDoCache.length} alertas de hoje emitidos do cache.',
+        '✅ [SERVICE] ${alertasDoCache.length} alertas de hoje emitidos do cache.',
       );
     }
   }
@@ -370,7 +370,7 @@ class AlertService {
         await prefs.setString(_keyCacheDate, hoje);
 
         _debugLog(
-          '💾 [SERVICE] forceSync: +\${novos.length} novos (cache: \${cacheAtualizado.length}).',
+          '💾 [SERVICE] forceSync: + ${novos.length} novos (cache: ${cacheAtualizado.length}).',
         );
       }
 
