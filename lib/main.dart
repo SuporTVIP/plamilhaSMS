@@ -6,7 +6,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:html' as html if (dart.library.io) 'package:PlamilhaSVIP/utils/web_stub.dart';
+import 'package:PlamilhaSVIP/utils/web_stub.dart' 
+    if (dart.library.html) 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -2016,7 +2017,7 @@ class _AlertCardState extends State<AlertCard> {
                       prog,
                       style: TextStyle(
                         color: corPrincipal,
-                        fontSize: 15,
+                        fontSize: 13.2,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1,
                       ),
@@ -2026,7 +2027,7 @@ class _AlertCardState extends State<AlertCard> {
                       "${widget.alerta.milhas} milhas",
                       style: const TextStyle(
                         color: AppTheme.text,
-                        fontSize: 14,
+                        fontSize: 12.2,
                         fontWeight: FontWeight.w400,
                       ),
                     ),
@@ -3223,6 +3224,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
       latamAtivo: widget.filtrosAtuais.latamAtivo,
       smilesAtivo: widget.filtrosAtuais.smilesAtivo,
       azulAtivo: widget.filtrosAtuais.azulAtivo,
+      outrosAtivo: widget.filtrosAtuais.outrosAtivo,
       origens: List<String>.from(widget.filtrosAtuais.origens),
       destinos: List<String>.from(widget.filtrosAtuais.destinos),
     );
@@ -3332,6 +3334,12 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
           const Color(0xFF38BDF8),
           _tempFiltros.azulAtivo,
           (bool val) => setState(() => _tempFiltros.azulAtivo = val),
+        ),
+        _buildSwitch(
+          "OUTROS INTERNACIONAIS (TAP, AA, IBERIA...)",
+          const Color(0xFF9333EA), // Um roxo elegante para diferenciar
+          _tempFiltros.outrosAtivo,
+          (bool val) => setState(() => _tempFiltros.outrosAtivo = val),
         ),
       ],
     );

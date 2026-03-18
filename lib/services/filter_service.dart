@@ -21,6 +21,9 @@ class UserFilters {
   /// Se alertas da AZUL devem ser exibidos.
   bool azulAtivo;
 
+  /// Se alertas de outras cias (TAP, Qatar, AA, Iberia, etc.) devem ser exibidos.
+  bool outrosAtivo;
+
   /// Lista de origens permitidas (ex: ["GRU - SÃO PAULO"]).
   final List<String> origens;
 
@@ -32,6 +35,7 @@ class UserFilters {
     this.latamAtivo = true,
     this.smilesAtivo = true,
     this.azulAtivo = true,
+    this.outrosAtivo = true,
     this.origens = const [],
     this.destinos = const [],
   });
@@ -65,6 +69,8 @@ class UserFilters {
         latamAtivo: data['latam'] ?? true,
         smilesAtivo: data['smiles'] ?? true,
         azulAtivo: data['azul'] ?? true,
+        // 🚀 Lendo a nova variável do cache
+        outrosAtivo: data['outros'] ?? true, 
         origens: List<String>.from(data['origens'] ?? []),
         destinos: List<String>.from(data['destinos'] ?? []),
       );
@@ -83,6 +89,8 @@ class UserFilters {
       'latam': latamAtivo,
       'smiles': smilesAtivo,
       'azul': azulAtivo,
+      // 🚀 Salvando a nova variável no cache
+      'outros': outrosAtivo, 
       'origens': origens,
       'destinos': destinos,
     };
@@ -100,9 +108,18 @@ class UserFilters {
     final String detalhesUpper = _normalizar(detalhes ?? "");
 
     // 1. Filtro por Companhia Aérea (Obrigatório, nunca fura)
-    if (programaUpper.contains("LATAM") && !latamAtivo) return false;
-    if (programaUpper.contains("SMILES") && !smilesAtivo) return false;
-    if (programaUpper.contains("AZUL") && !azulAtivo) return false;
+    final bool isAzul = programaUpper.contains("AZUL");
+    final bool isLatam = programaUpper.contains("LATAM");
+    final bool isSmiles = programaUpper.contains("SMILES");
+
+    if (isLatam && !latamAtivo) return false;
+    if (isSmiles && !smilesAtivo) return false;
+    if (isAzul && !azulAtivo) return false;
+
+    // 🚀 A MÁGICA DOS OUTROS PROGRAMAS (TAP, IBERIA, AA, ETC)
+    if (!isAzul && !isLatam && !isSmiles) {
+      if (!outrosAtivo) return false; // Bloqueia se a chave geral de "outros" estiver desligada
+    }
 
     // Se o usuário não configurou nenhum filtro geográfico, tá liberado!
     if (origens.isEmpty && destinos.isEmpty) return true;
@@ -149,7 +166,7 @@ class UserFilters {
     return false;
   }
 
- /// Verifica se um [Alert] completo atende aos critérios.
+  /// Verifica se um [Alert] completo atende aos critérios.
   bool alertaPassaNoFiltro(Alert alerta) {
     return passaNoFiltroBasico(
       alerta.programa, 
@@ -160,7 +177,6 @@ class UserFilters {
 }
 
 /// Serviço para gerenciamento da lista de aeroportos disponíveis no sistema.
-///
 /// Mantém cache diário para performance e fallback de segurança.
 class AeroportoService {
   // Configurações
@@ -245,4 +261,3 @@ class AeroportoService {
     ];
   }
 }
-

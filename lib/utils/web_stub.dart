@@ -1,16 +1,12 @@
-// ignore_for_file: camel_case_types
+import 'dart:async';
 
-/// Este arquivo é um substituto (stub) para o dart:html.
-/// Ele permite que o código mobile compile sem erro, fingindo que 
-/// as funcionalidades de janela do navegador existem.
-class window {
-  static _Window get windowInstance => _Window();
-  
-  // Simula o html.window.onMessage
-  static Stream<dynamic> get onMessage => const Stream.empty();
-}
-
-class _Window {
-  // Caso você precise de mais métodos do window no futuro, adicione aqui
+/// 🛡️ O "Dublê" do navegador para o Android.
+/// Ele finge que existe uma janela e um onMessage, mas não faz nada.
+class WindowStub {
+  // Simula o onMessage do navegador para não dar erro de compilação
   Stream<dynamic> get onMessage => const Stream.empty();
 }
+
+// 🚀 O PULO DO GATO: Criamos uma variável global chamada 'window'
+// para que o código 'html.window.onMessage' funcione no Android.
+WindowStub get window => WindowStub();

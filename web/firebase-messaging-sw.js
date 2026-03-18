@@ -81,12 +81,25 @@ function bateComFiltro(local, lista) {
   }
   return false;
 }
+// Espelho de passaNoFiltroBasico() do filter_service.dart
 function passaNoFiltro(filtros, programa, trecho, detalhes) {
   if (!filtros) return true;
   const prog = (programa || '').toUpperCase();
-  if (prog.includes('LATAM') && filtros.latam === false) return false;
-  if (prog.includes('SMILES') && filtros.smiles === false) return false;
-  if (prog.includes('AZUL') && filtros.azul === false) return false;
+
+  const isAzul = prog.includes('AZUL');
+  const isLatam = prog.includes('LATAM');
+  const isSmiles = prog.includes('SMILES');
+
+  if (isLatam && filtros.latam === false) return false;
+  if (isSmiles && filtros.smiles === false) return false;
+  if (isAzul && filtros.azul === false) return false;
+
+  // 🚀 A NOVA REGRA NO JAVASCRIPT
+  if (!isAzul && !isLatam && !isSmiles) {
+    // Retorna false apenas se a chave 'outros' existir e for estritamente false
+    if (filtros.outros === false) return false;
+  }
+
   const ori = filtros.origens || [], dst = filtros.destinos || [];
   if (!ori.length && !dst.length) return true;
   const p = (trecho || '').toUpperCase().split('-');

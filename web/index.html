@@ -244,7 +244,20 @@
         setTimeout(() => screen.remove(), 500);
       }
     });
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+          updateViaCache: 'none'
+        }).then(reg => {
+          console.log('✅ Service Worker VIP pronto!');
+          reg.update(); // Força a busca por atualizações
+        });
+      });
+    }
   </script>
+
+
 
   <script src="flutter_bootstrap.js" async></script>
 </body>
