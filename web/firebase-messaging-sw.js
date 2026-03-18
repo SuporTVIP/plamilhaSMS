@@ -112,10 +112,27 @@ messaging.onBackgroundMessage((payload) => {
       console.log(`[SW] Bloqueado: ${programa} | ${trecho}`);
       return;
     }
+
+    // 🚀 A MÁGICA: Avisa todas as abas abertas que chegou um push
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({
+          type: 'PLAMILHAS_PUSH_RECEIVED',
+          payload: data // Enviamos o alerta completo para a aba!
+        });
+      });
+    });
+
     console.log(`[SW] Notificando: ${programa} | ${trecho}`);
     return self.registration.showNotification(`✈️ ${programa}`, {
-      body: trecho, icon: '/icons/Icon-192.png',
-      badge: '/icons/Icon-192.png', tag: id, renotify: true, data,
+      body: trecho,
+      icon: '/icons/Icon-192.png',
+      badge: '/icons/Icon-192.png',
+      tag: id,
+      renotify: true,
+      data,
+      // 🔊 Tenta disparar o som padrão do sistema
+      silent: false,
     });
   });
 });

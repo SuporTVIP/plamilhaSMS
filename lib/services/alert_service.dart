@@ -393,4 +393,35 @@ class AlertService {
     // ignore: avoid_print
     print(message);
   }
+
+  /// 🚀 MÁGICA WEB/MOBILE: Injeta um alerta recebido via Push direto na Stream e no Cache.
+  /// Isso evita que o app precise fazer um Pull (forceSync) toda vez.
+  Future<void> injetarAlertaPush(Map<String, dynamic> data) async {
+    try {
+      final Alert novo = Alert.fromPush(data);
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      
+      // 1. Lê o cache atual
+      final List<String> cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
+      
+      // 2. Verifica se já existe para não duplicar na tela
+      final bool jaExiste = cacheRaw.any((raw) {
+        try { return jsonDecode(raw)['id'] == novo.id; } catch (_) { return false; }
+      });
+
+      if (!jaExiste) {
+        _debugLog("✨ [SERVICE] Injetando alerta via Push: ${novo.trecho}");
+        
+        // 3. Salva no SharedPreferences para o F5 não perder o dado
+        cacheRaw.insert(0, jsonEncode(novo.toJson()));
+        await prefs.setStringList(_keyCacheV2, cacheRaw.take(100).toList());
+
+        // 4. Emite para a UI atualizar na hora!
+        // Como o alertStream é um broadcast, a tela AlertsScreen vai reagir imediatamente.
+        await carregarDoCache(); 
+      }
+    } catch (e) {
+      _debugLog("❌ [SERVICE] Erro ao injetar alerta avulso: $e");
+    }
+  }
 }

@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:html' as html if (dart.library.io) 'package:PlamilhaSVIP/utils/web_stub.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -15,7 +16,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-
 import 'core/theme.dart';
 import 'login_screen.dart';
 import 'models/alert.dart';
@@ -664,6 +664,7 @@ class _MainNavigatorState extends State<MainNavigator>
     with WidgetsBindingObserver {
   int _currentIndex = 1; // Começa na aba central (Licença)
   final AlertService _alertService = AlertService();
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   final List<Widget> _screens = const [
     AlertsScreen(),
@@ -734,10 +735,40 @@ class _MainNavigatorState extends State<MainNavigator>
     registerWebCloseListener();
     _alertService.startMonitoring();
 
-    if (!kIsWeb) {
       _listenToForegroundPushes();
+
+      // 🚀 SÓ PARA WEB: Escuta o sinal vindo do Service Worker (Background -> Foreground)
+    if (kIsWeb) {
+      _configurarEscutaServiceWorker();
     }
   }
+  void _configurarEscutaServiceWorker() {
+    // Escuta mensagens do sistema (postMessage do JS)
+    // ignore: undefined_prefixed_name
+    html.window.onMessage.listen((event) {
+      if (event.data is Map && event.data['type'] == 'PLAMILHAS_PUSH_RECEIVED') {
+        debugPrint("🌐 [WEB] Sinal do SW recebido! Tocando sirene e injetando...");
+        final data = Map<String, dynamic>.from(event.data['payload']);
+        
+        // 1. Injeta o alerta na lista
+        _alertService.injetarAlertaPush(data);
+
+        // 2. Toca o som (Se a aba estiver aberta, o áudio já foi destravado)
+        _tocarSireneWeb(); 
+      }
+    });
+  }
+
+  void _tocarSireneWeb() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
+    if (somAtivo) {
+      // Agora o compilador vai encontrar o _audioPlayer que definimos acima!
+      await _audioPlayer.play(AssetSource('sounds/alerta.mp3')).catchError((e) => debugPrint("🔇 Erro som: $e"));
+    }
+  }
+
+
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1887,8 +1918,8 @@ class _AlertCardState extends State<AlertCard> {
     }
 
     else if (prog.contains("GOL")) {
-      corPrincipal = const Color(0xFF22C55E);
-      corFundo = const Color(0xFF0A1F0B);
+      corPrincipal = const Color(0xFFFF5C00); //
+      corFundo = const Color(0xFF140800);
     }
     else if (prog.contains("QATAR")) {
       corPrincipal = const Color(0xFF860232); // Cor oficial Qatar
