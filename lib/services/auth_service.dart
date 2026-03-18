@@ -88,15 +88,38 @@ class AuthService {
     };
   }
 
-  /// Realiza uma verificação local rápida para autorização diária sem chamada de rede obrigatória.
+  /// Realiza uma verificação de autorização com o servidor.
   Future<AuthStatus> validarAcessoDiario() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String hoje = DateTime.now().toIso8601String().split('T')[0];
-    final String? ultimaChecagem = prefs.getString(_keyLastCheck);
+    
+    final String? email = prefs.getString(_keyEmail);
+    final String? token = prefs.getString(_keyToken);
 
-    if (ultimaChecagem == hoje) return AuthStatus.autorizado;
-    await prefs.setString(_keyLastCheck, hoje);
-    return AuthStatus.autorizado;
+    // 1. Se não tem login na memória, já barra na hora
+    if (email == null || token == null) {
+      return AuthStatus.bloqueado;
+    }
+
+    // 2. Bate no servidor (GAS) para ver se o token e o device ainda valem HOJE
+    // Nota: O 'autenticarNoServidor' já vai atualizar a data de vencimento no SharedPreferences se der sucesso!
+    final Map<String, dynamic> resultado = await autenticarNoServidor(email, token);
+
+    if (resultado["sucesso"] == true) {
+      return AuthStatus.autorizado;
+    } 
+    // 3. MODO OFFLINE (Avião, Subsolo, etc)
+    else if (resultado["mensagem"] == "Servidor offline ou bloqueio de rede." || 
+             resultado["mensagem"] == "Falha de rede ao descobrir servidor.") {
+      // Se for apenas falta de internet, não vamos expulsar o usuário por maldade.
+      // Permitimos que ele use o app com base na última licença válida salva.
+      _debugLog("🌐 [AUTH] Sem internet. Confiando no passe livre temporário.");
+      return AuthStatus.autorizado; 
+    } 
+    // 4. O Servidor respondeu explicitamente que a licença VENCEU ou FOI BANIDA
+    else {
+      _debugLog("⛔ [AUTH] Servidor negou o acesso: ${resultado["mensagem"]}");
+      return AuthStatus.bloqueado;
+    }
   }
 
   /// Autentica o usuário junto ao servidor principal (GAS).
@@ -133,20 +156,20 @@ class AuthService {
 
       if (kIsWeb) {
         // No Navegador, o CORS nativo gerencia redirecionamentos
-        response = await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 15));
+        response = await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 33));
       } else {
         // No Android/iOS, precisamos seguir o redirecionamento 302 manualmente
         final http.Request request = http.Request('POST', Uri.parse(serverUrl))
           ..followRedirects = false
           ..body = bodyData;
 
-        final http.StreamedResponse streamedResponse = await request.send().timeout(const Duration(seconds: 15));
+        final http.StreamedResponse streamedResponse = await request.send().timeout(const Duration(seconds: 33));
         response = await http.Response.fromStream(streamedResponse);
 
         if (response.statusCode == 302 || response.statusCode == 303) {
           final String? redirectUrl = response.headers['location'];
           if (redirectUrl != null) {
-            response = await http.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 15));
+            response = await http.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 33));
           }
         }
       }
@@ -178,7 +201,7 @@ class AuthService {
     }
   }
 
-  /// Remove o acesso do dispositivo localmente e tenta notificar o servidor (fire-and-forget).
+/// Remove o acesso do dispositivo localmente, limpa o cache e tenta notificar o servidor.
   Future<bool> logout() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String deviceId = await getDeviceId();
@@ -189,13 +212,14 @@ class AuthService {
 
       if (serverUrl != null) {
         final String bodyData = jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId});
-        
+
         if (kIsWeb) {
           await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 10));
         } else {
           final http.Request request = http.Request('POST', Uri.parse(serverUrl))
             ..followRedirects = false
             ..body = bodyData;
+
           await request.send().timeout(const Duration(seconds: 10));
         }
       }
@@ -203,12 +227,19 @@ class AuthService {
       _debugLog("⚠️ Erro ao remover aparelho do servidor: $e");
     }
 
+    // 🧹 Limpeza total de credenciais
     await prefs.remove(_keyToken);
     await prefs.remove(_keyEmail);
     await prefs.remove(_keyUsuario);
     await prefs.remove(_keyVencimento);
     await prefs.remove(_keyIdPlanilha);
     await prefs.remove(_keyLastCheck);
+
+    // 🚀 A MÁGICA AQUI: Destruindo o cache de voos para não deixar rastros!
+    await prefs.remove('ALERTS_CACHE_V2');
+    await prefs.remove('CACHE_DATE_V2');
+    
+    _debugLog("🗑️ [AUTH] Cache de alertas e credenciais destruídos com sucesso.");
 
     return true;
   }

@@ -44,6 +44,12 @@ class DiscoveryConfig {
   /// Atualizado pelo Gist sem precisar de update do APK.
   final List<String> smsBlacklist;
 
+  /// URL de atualização do app, usada no diálogo de versão mínima.
+  final String updateUrl;
+
+  //URL do checkout para renovação de licença, usada no diálogo de versão mínima.
+  final String urlRenovacaoLicenca;
+
   const DiscoveryConfig({
     required this.gasUrl,
     required this.status,
@@ -55,6 +61,8 @@ class DiscoveryConfig {
     this.announcement = '',
     this.pushEnabled = true,
     this.smsBlacklist = const [],
+    this.updateUrl = '',
+    this.urlRenovacaoLicenca = '',
   });
 
   factory DiscoveryConfig.fromJson(Map<String, dynamic> json) {
@@ -70,6 +78,8 @@ class DiscoveryConfig {
       announcement: json['announcement'] ?? '',
       pushEnabled: json['push_enabled'] ?? true,
       smsBlacklist: List<String>.from(json['sms_blacklist'] ?? []),
+      updateUrl: json['update_url'] ?? '',
+      urlRenovacaoLicenca: json['url_renovacao_licenca'] ?? '',
     );
   }
 

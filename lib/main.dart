@@ -725,6 +725,8 @@ class _MainNavigatorState extends State<MainNavigator>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    _verificarBloqueioLicenca();
+
     // 🚀 Chamamos a função de permissão aqui.
     // Ela roda em paralelo e não trava a abertura do app.
     _configurarNotificacoes();
@@ -734,6 +736,33 @@ class _MainNavigatorState extends State<MainNavigator>
 
     if (!kIsWeb) {
       _listenToForegroundPushes();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("🛡️ [SEGURANÇA] Validando licença no retorno ao app...");
+      _verificarBloqueioLicenca();
+    }
+  }
+
+  Future<void> _verificarBloqueioLicenca() async {
+    // ⚡ Performance O(1): Validação simples de token/data
+    final AuthStatus status = await AuthService().validarAcessoDiario();
+
+    if (status != AuthStatus.autorizado && mounted) {
+      debugPrint("⛔ [SEGURANÇA] Licença expirada ou inválida. Expulsando usuário...");
+      
+      // 1. Limpa os dados de login
+      await AuthService().logout();
+
+      // 2. Redireciona para a Splash que enviará para o Login
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const SplashRouter()),
+        );
+      }
     }
   }
 
@@ -1114,7 +1143,7 @@ class _AlertsScreenState extends State<AlertsScreen>
       try {
         final PackageInfo info = await PackageInfo.fromPlatform();
         if (_versaoMenorQue(info.version, config.minVersion) && mounted) {
-          _mostrarDialogAtualizacao(config.minVersion);
+          _mostrarDialogAtualizacao(config.minVersion, config.updateUrl);
         }
       } catch (e) {
         debugPrint('⚠️ [GIST] Erro ao verificar versão: $e');
@@ -1139,7 +1168,7 @@ class _AlertsScreenState extends State<AlertsScreen>
 
   /// Dialog bloqueante de versão mínima.
   /// Não tem botão de fechar — o usuário precisa clicar em Atualizar.
-  void _mostrarDialogAtualizacao(String versaoMinima) {
+  void _mostrarDialogAtualizacao(String versaoMinima, String urlDownload) {
     showDialog<void>(
       context: context,
       barrierDismissible: false, // não fecha tocando fora
@@ -1178,10 +1207,8 @@ class _AlertsScreenState extends State<AlertsScreen>
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () async {
-                  // Abre a Play Store na página do app
-                  const String playStoreUrl =
-                      'https://play.google.com/store/apps/details?id=com.suportvips.milhasalert.milhas_alert';
-                  final Uri uri = Uri.parse(playStoreUrl);
+                  // Abre a Play Store na página do app ou o link direto de download, dependendo do que estiver disponível.
+                 final Uri uri = Uri.parse(urlDownload);
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   } else {
@@ -1297,7 +1324,7 @@ class _AlertsScreenState extends State<AlertsScreen>
       }
     });
 
-    Future<void>.delayed(const Duration(seconds: 4), () {
+    Future<void>.delayed(const Duration(seconds: 5), () {
       if (mounted && _isCarregando) {
         debugPrint("⏱️ [UI-MOTOR] Timeout atingido. Removendo indicador.");
         setState(() => _isCarregando = false);
@@ -1460,23 +1487,45 @@ class _AlertsScreenState extends State<AlertsScreen>
                 ),
             ],
           ),
-          tooltip: "Ligar/Desligar Som",
-          onPressed: () {
-            if (_needsWebAudioInteraction) {
-              setState(() => _needsWebAudioInteraction = false);
-              _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+tooltip: "Ligar/Desligar Som",
+    onPressed: () async { // 🚀 1. Adicionamos o 'async' aqui
+      if (_needsWebAudioInteraction) {
+        // Assume temporariamente que vai dar certo para a UI responder rápido
+        setState(() => _needsWebAudioInteraction = false); 
+        
+        try {
+          // 🚀 2. Colocamos o 'await' para o try-catch conseguir capturar o erro
+          await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("🔊 Sistema de áudio desbloqueado!"),
-                  backgroundColor: AppTheme.green,
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            } else {
-              _toggleSound();
-            }
-          },
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("🔊 Sistema de áudio desbloqueado!"),
+                backgroundColor: AppTheme.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (e) {
+          debugPrint("🔇 [WEB] Erro ao destravar áudio: $e");
+          
+          if (mounted) {
+            // 🛡️ 3. Se der erro (bloqueio), devolvemos o botão para o estado de alerta (!)
+            setState(() => _needsWebAudioInteraction = true); 
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("🔇 O navegador bloqueou o áudio. O app continuará no modo silencioso."),
+                backgroundColor: AppTheme.red, // Usa o vermelho para indicar o bloqueio
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } else {
+        _toggleSound();
+      }
+    },
         );
 
         if (_needsWebAudioInteraction) {
@@ -1821,6 +1870,34 @@ class _AlertCardState extends State<AlertCard> {
     } else if (prog.contains("SMILES")) {
       corPrincipal = const Color(0xFFF59E0B);
       corFundo = const Color(0xFF22160A);
+    }
+    else if (prog.contains("TAP")) {
+      corPrincipal = const Color(0xFF2DD4BF);
+      corFundo = const Color(0xFF0A1F1C);
+    }
+   else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
+      // Vermelho vivo da marca para o texto/ícone (contrasta bem no escuro)
+      corPrincipal = const Color(0xFFD30000); 
+      // Fundo bordô quase preto (segue o padrão LATAM/Azul)
+      corFundo = const Color(0xFF1A0505); 
+    }
+    else if (prog.contains("AADVANTAGE")) {
+      corPrincipal = const Color(0xFF0078D2); // Azul clássico da AA
+      corFundo = const Color(0xFF0B172A); // Azul Marinho muito escuro para contraste
+    }
+
+    else if (prog.contains("GOL")) {
+      corPrincipal = const Color(0xFF22C55E);
+      corFundo = const Color(0xFF0A1F0B);
+    }
+    else if (prog.contains("QATAR")) {
+      corPrincipal = const Color(0xFF860232); // Cor oficial Qatar
+      corFundo = const Color(0xFF140108);      // Fundo grena quase preto
+    }
+    
+    else{
+      corPrincipal = AppTheme.white;
+      corFundo = AppTheme.black;
     }
 
     final BoxShadow blurDourado = widget.isHighlighted
@@ -2737,7 +2814,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
         _isBloqueado = (status != AuthStatus.autorizado);
         _statusConexao = (status == AuthStatus.autorizado)
             ? "Serviço Ativo"
-            : "⛔ BLOQUEADO";
+            : "BLOQUEADO";
       });
     }
   }
@@ -2794,7 +2871,9 @@ class _LicenseScreenState extends State<LicenseScreen> {
             _buildStatusCard(),
             const SizedBox(height: 20),
             _buildInfoGrid(),
-            const SizedBox(height: 30),
+            const SizedBox(height: 15),
+            _buildRenovarLicencaButton(),
+            const SizedBox(height: 10),
             _buildLogoutButton(),
           ],
         ),
@@ -2989,6 +3068,56 @@ class _LicenseScreenState extends State<LicenseScreen> {
           ),
         ),
         onPressed: _isSaindo ? null : _fazerLogoff,
+      ),
+    );
+  }
+
+Widget _buildRenovarLicencaButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 55,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: AppTheme.green, width: 1.5),
+          foregroundColor: AppTheme.esmerald, // Certifique-se de que essa cor existe no seu AppTheme
+          backgroundColor: AppTheme.green.withOpacity(0.05),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        // 🚀 1. Correção: Trocamos "child" por "icon"
+        icon: const Icon(Icons.autorenew_rounded, size: 22), 
+        label: const Text(
+          "RENOVAR LICENÇA",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+          ),
+        ),
+        // 🚀 2. Lógica para buscar a URL no Gist e abrir o site
+        onPressed: _isSaindo ? null : () async {
+try {
+            // Busca a configuração mais recente do seu Gist
+            final config = await DiscoveryService().getConfig();
+            
+            // 🚀 Proteção dupla: verifica se é nulo E se está vazio
+            String urlString = config?.urlRenovacaoLicenca ?? "";
+            if (urlString.trim().isEmpty) {
+              urlString = "https://plamilhasweb.suportvip.com/"; // Fallback seguro
+            }
+            
+            final Uri uri = Uri.parse(urlString);
+            
+            // Lança o navegador externo
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            } else {
+              debugPrint("⚠️ Não foi possível abrir o link: $urlString");
+            }
+          } catch (e) {
+            debugPrint("❌ Erro ao abrir link de renovação: $e");
+          }
+        },
       ),
     );
   }

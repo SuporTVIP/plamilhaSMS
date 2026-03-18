@@ -1,11 +1,11 @@
 {
-    "name": "milhas_alert",
-    "short_name": "milhas_alert",
+    "name": "Plamilhas VIP",
+    "short_name": "PlamilhasVIP",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0D1320",
+    "theme_color": "#3B82F6",
+    "description": "Radar de emissões e oportunidades de passagens com milhas em tempo real.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -22,6 +22,7 @@ class AppTheme {
   static const Color esmerald = Color(0xFF059669);
   static const Color white = Color(0xFFFFFFFF);
   static const Color amber = Color(0xFFFFC107);
+  static const Color black = Color(0xFF000000);
 
   /// Retorna as configurações de tema Escuro (Dark Mode).
   static ThemeData get darkTheme {
