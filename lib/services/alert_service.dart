@@ -118,7 +118,7 @@ class AlertService {
 
   /// Retorna um rótulo indicando o tempo desde a última sincronização.
   String get lastSyncLabel {
-    if (_lastSyncTime == null) return 'Aguardando push...';
+    if (_lastSyncTime == null) return 'Aguardando emissões...';
     final Duration diff = DateTime.now().difference(_lastSyncTime!);
     if (diff.inMinutes < 1) return 'Agora mesmo';
     if (diff.inMinutes < 60) return 'Há ${diff.inMinutes} min';
@@ -201,6 +201,7 @@ class AlertService {
         _debugLog("⏱️ [SERVICE] Web: sync ignorado (faz menos de 5 min).");
         // Emite o cache atual sem fazer HTTP
         final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('SYNC_INICIAL_FEITA');
         final cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
         if (cacheRaw.isNotEmpty) {
           final alertas = cacheRaw
@@ -329,13 +330,17 @@ class AlertService {
 
       final DateTime hoje = DateTime.now();
       final DateTime inicioDoDia = DateTime(hoje.year, hoje.month, hoje.day);
-
       final List<Alert> alertsFromServer = rawData
           .map((dynamic j) => Alert.fromJson(j))
-          .where((Alert a) => a.data.isAfter(inicioDoDia))
+          // 🚀 Use !isBefore para incluir algo que saiu exatamente 00:00:00
+          .where((Alert a) => !a.data.isBefore(inicioDoDia))
           .toList();
-
-      if (alertsFromServer.isEmpty) return;
+      if (alertsFromServer.isEmpty) {
+        // Emite a lista vazia pra tela saber que buscou e não tem nada de hoje!
+        _lastSyncTime = DateTime.now();
+        _alertController.add([]);
+        return;
+      }
 
       // Salva no ALERTS_CACHE_V2 para unificar com os alertas de push
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -400,25 +405,29 @@ class AlertService {
     try {
       final Alert novo = Alert.fromPush(data);
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      
+
       // 1. Lê o cache atual
       final List<String> cacheRaw = prefs.getStringList(_keyCacheV2) ?? [];
-      
+
       // 2. Verifica se já existe para não duplicar na tela
       final bool jaExiste = cacheRaw.any((raw) {
-        try { return jsonDecode(raw)['id'] == novo.id; } catch (_) { return false; }
+        try {
+          return jsonDecode(raw)['id'] == novo.id;
+        } catch (_) {
+          return false;
+        }
       });
 
       if (!jaExiste) {
         _debugLog("✨ [SERVICE] Injetando alerta via Push: ${novo.trecho}");
-        
+
         // 3. Salva no SharedPreferences para o F5 não perder o dado
         cacheRaw.insert(0, jsonEncode(novo.toJson()));
         await prefs.setStringList(_keyCacheV2, cacheRaw.take(100).toList());
 
         // 4. Emite para a UI atualizar na hora!
         // Como o alertStream é um broadcast, a tela AlertsScreen vai reagir imediatamente.
-        await carregarDoCache(); 
+        await carregarDoCache();
       }
     } catch (e) {
       _debugLog("❌ [SERVICE] Erro ao injetar alerta avulso: $e");

@@ -6,8 +6,9 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:PlamilhaSVIP/utils/web_stub.dart' 
-    if (dart.library.html) 'dart:html' as html;
+import 'package:PlamilhaSVIP/utils/web_stub.dart'
+    if (dart.library.html) 'dart:html'
+    as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -148,7 +149,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v3',
+        'emissao_vip_v4',
         'Emissões FãMilhasVIP',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -160,8 +161,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
     final String statusSom = somAtivo ? "🔊 SONORA" : "🔕 SILENCIOSA";
     final String idCanal = somAtivo
-        ? 'emissao_vip_v3'
-        : 'emissao_vip_v3_silent';
+        ? 'emissao_vip_v4'
+        : 'emissao_vip_v4_silent';
     debugPrint(
       "🔔 [FCM-UX] Preparando Notificação $statusSom via canal: $idCanal",
     );
@@ -242,7 +243,7 @@ void main() async {
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v3',
+        'emissao_vip_v4',
         'Alertas Sonoros',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -254,7 +255,7 @@ void main() async {
     // 🔕 CANAL SILENCIOSO (Novo ID)
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v3_silent', // ID Diferente
+        'emissao_vip_v4_silent', // ID Diferente
         'Alertas Silenciosos',
         importance: Importance.high,
         playSound: false,
@@ -673,24 +674,17 @@ class _MainNavigatorState extends State<MainNavigator>
     SmsScreen(),
   ];
 
-  // // 🚀 Novo método para lidar com a permissão de forma assíncrona
-  // Future<void> _pedirPermissaoNotificacao() async {
-  //   if (!kIsWeb) {
-  //     final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
-  //         flutterLocalNotificationsPlugin
-  //             .resolvePlatformSpecificImplementation<
-  //               AndroidFlutterLocalNotificationsPlugin
-  //             >();
-
-  //     // Agora o 'await' é permitido porque esta função é 'async'
-  //     final bool? concedida = await androidPlugin
-  //         ?.requestNotificationsPermission();
-
-  //     debugPrint(
-  //       "🔔 [PERMISSÃO] O usuário aceitou as notificações? $concedida",
-  //     );
-  //   }
-  // }
+  Future<void> _verificarOtimizacaoBateria() async {
+    // 🚀 Só pede no Mobile. O navegador ignora isso.
+    if (!kIsWeb) {
+      PermissionStatus status =
+          await Permission.ignoreBatteryOptimizations.status;
+      if (!status.isGranted) {
+        // Abre um popup do sistema pedindo para o usuário "Permitir" que o app rode sem limites
+        await Permission.ignoreBatteryOptimizations.request();
+      }
+    }
+  }
 
   /// Dispara uma notificação local.
   Future<void> _tocarNotificacaoLocal({
@@ -708,7 +702,7 @@ class _MainNavigatorState extends State<MainNavigator>
       body: corpo,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          somAtivo ? 'emissao_vip_v3' : 'emissao_vip_v3_silent',
+          somAtivo ? 'emissao_vip_v4' : 'emissao_vip_v4_silent',
           'Emissões FãMilhasVIP',
           importance: somAtivo ? Importance.max : Importance.high,
           priority: Priority.high,
@@ -727,6 +721,8 @@ class _MainNavigatorState extends State<MainNavigator>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    _preAquecerAudioWeb();
+
     _verificarBloqueioLicenca();
 
     // 🚀 Chamamos a função de permissão aqui.
@@ -736,40 +732,103 @@ class _MainNavigatorState extends State<MainNavigator>
     registerWebCloseListener();
     _alertService.startMonitoring();
 
-      _listenToForegroundPushes();
+    _listenToForegroundPushes();
 
-      // 🚀 SÓ PARA WEB: Escuta o sinal vindo do Service Worker (Background -> Foreground)
+    _verificarOtimizacaoBateria();
+
+    // 🚀 SÓ PARA WEB: Escuta o sinal vindo do Service Worker (Background -> Foreground)
     if (kIsWeb) {
       _configurarEscutaServiceWorker();
     }
   }
-  void _configurarEscutaServiceWorker() {
-    // Escuta mensagens do sistema (postMessage do JS)
-    // ignore: undefined_prefixed_name
-    html.window.onMessage.listen((event) {
-      if (event.data is Map && event.data['type'] == 'PLAMILHAS_PUSH_RECEIVED') {
-        debugPrint("🌐 [WEB] Sinal do SW recebido! Tocando sirene e injetando...");
-        final data = Map<String, dynamic>.from(event.data['payload']);
-        
-        // 1. Injeta o alerta na lista
-        _alertService.injetarAlertaPush(data);
 
-        // 2. Toca o som (Se a aba estiver aberta, o áudio já foi destravado)
-        _tocarSireneWeb(); 
+  void _configurarEscutaServiceWorker() {
+    if (!kIsWeb) return; // 🛡️ Segurança extra
+
+    try {
+      // 🚀 O TRUQUE: Usamos 'dynamic' para o compilador não reclamar do WindowStub
+      final dynamic windowGerente = html.window;
+
+      // Canal 1: navigator.serviceWorker
+      if (windowGerente.navigator != null &&
+          windowGerente.navigator.serviceWorker != null) {
+        windowGerente.navigator.serviceWorker.onMessage.listen((event) {
+          _processarMensagemSW(event.data);
+        });
       }
-    });
+
+      // Canal 2: window.onMessage
+      html.window.onMessage.listen((event) {
+        _processarMensagemSW(event.data);
+      });
+
+      debugPrint("📡 [WEB] Escutas do Service Worker (Navigator) ativadas.");
+    } catch (e) {
+      debugPrint("⚠️ [WEB] Erro ao acessar Navigator: $e");
+    }
+  }
+
+  // Mantenha a função de processamento separada para organização
+  void _processarMensagemSW(dynamic rawData) {
+    try {
+      if (rawData == null) return;
+
+      Map<String, dynamic> dataMap = {};
+
+      // Decodificação blindada para Web
+      if (rawData is String) {
+        dataMap = jsonDecode(rawData) as Map<String, dynamic>;
+      } else {
+        dataMap = jsonDecode(jsonEncode(rawData)) as Map<String, dynamic>;
+      }
+
+      if (dataMap['type'] == 'PLAMILHAS_PUSH_RECEIVED') {
+        debugPrint("🔊 [WEB] SINAL DO SW CAPTURADO! Acionando sirene...");
+
+        final Map<String, dynamic> payload = Map<String, dynamic>.from(
+          dataMap['payload'] ?? {},
+        );
+
+        // Injeta na lista e toca o som
+        _alertService.injetarAlertaPush(payload);
+        _tocarSireneWeb();
+      }
+    } catch (e) {
+      // Mensagens de sistema ou outros tipos de postMessage caem aqui e são ignoradas
+    }
+  }
+
+  void _preAquecerAudioWeb() async {
+    if (kIsWeb) {
+      try {
+        await _audioPlayer.setVolume(0.0); // Volume zero para ninguém ouvir
+        await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+        await _audioPlayer.stop(); // Para rapidinho
+        await _audioPlayer.setVolume(
+          1.0,
+        ); // Volta o volume pro máximo para a sirene real
+        debugPrint("🔊 [WEB] Áudio pré-aquecido e destravado no navegador!");
+      } catch (e) {
+        debugPrint("🔇 [WEB] Falha ao pré-aquecer áudio: $e");
+      }
+    }
   }
 
   void _tocarSireneWeb() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
+
     if (somAtivo) {
-      // Agora o compilador vai encontrar o _audioPlayer que definimos acima!
-      await _audioPlayer.play(AssetSource('sounds/alerta.mp3')).catchError((e) => debugPrint("🔇 Erro som: $e"));
+      try {
+        // 🚀 Forçamos o stop e o play para o navegador "acordar" o áudio
+        await _audioPlayer.stop();
+        await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+        debugPrint("📢 [WEB] Sirene tocada com sucesso!");
+      } catch (e) {
+        debugPrint("🔇 Erro ao tocar sirene web: $e");
+      }
     }
   }
-
-
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -784,8 +843,10 @@ class _MainNavigatorState extends State<MainNavigator>
     final AuthStatus status = await AuthService().validarAcessoDiario();
 
     if (status != AuthStatus.autorizado && mounted) {
-      debugPrint("⛔ [SEGURANÇA] Licença expirada ou inválida. Expulsando usuário...");
-      
+      debugPrint(
+        "⛔ [SEGURANÇA] Licença expirada ou inválida. Expulsando usuário...",
+      );
+
       // 1. Limpa os dados de login
       await AuthService().logout();
 
@@ -1240,7 +1301,7 @@ class _AlertsScreenState extends State<AlertsScreen>
               child: ElevatedButton.icon(
                 onPressed: () async {
                   // Abre a Play Store na página do app ou o link direto de download, dependendo do que estiver disponível.
-                 final Uri uri = Uri.parse(urlDownload);
+                  final Uri uri = Uri.parse(urlDownload);
                   if (await canLaunchUrl(uri)) {
                     await launchUrl(uri, mode: LaunchMode.externalApplication);
                   } else {
@@ -1519,45 +1580,49 @@ class _AlertsScreenState extends State<AlertsScreen>
                 ),
             ],
           ),
-tooltip: "Ligar/Desligar Som",
-    onPressed: () async { // 🚀 1. Adicionamos o 'async' aqui
-      if (_needsWebAudioInteraction) {
-        // Assume temporariamente que vai dar certo para a UI responder rápido
-        setState(() => _needsWebAudioInteraction = false); 
-        
-        try {
-          // 🚀 2. Colocamos o 'await' para o try-catch conseguir capturar o erro
-          await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+          tooltip: "Ligar/Desligar Som",
+          onPressed: () async {
+            // 🚀 1. Adicionamos o 'async' aqui
+            if (_needsWebAudioInteraction) {
+              // Assume temporariamente que vai dar certo para a UI responder rápido
+              setState(() => _needsWebAudioInteraction = false);
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("🔊 Sistema de áudio desbloqueado!"),
-                backgroundColor: AppTheme.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        } catch (e) {
-          debugPrint("🔇 [WEB] Erro ao destravar áudio: $e");
-          
-          if (mounted) {
-            // 🛡️ 3. Se der erro (bloqueio), devolvemos o botão para o estado de alerta (!)
-            setState(() => _needsWebAudioInteraction = true); 
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("🔇 O navegador bloqueou o áudio. O app continuará no modo silencioso."),
-                backgroundColor: AppTheme.red, // Usa o vermelho para indicar o bloqueio
-                duration: Duration(seconds: 4),
-              ),
-            );
-          }
-        }
-      } else {
-        _toggleSound();
-      }
-    },
+              try {
+                // 🚀 2. Colocamos o 'await' para o try-catch conseguir capturar o erro
+                await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("🔊 Sistema de áudio desbloqueado!"),
+                      backgroundColor: AppTheme.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                debugPrint("🔇 [WEB] Erro ao destravar áudio: $e");
+
+                if (mounted) {
+                  // 🛡️ 3. Se der erro (bloqueio), devolvemos o botão para o estado de alerta (!)
+                  setState(() => _needsWebAudioInteraction = true);
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        "🔇 O navegador bloqueou o áudio. O app continuará no modo silencioso.",
+                      ),
+                      backgroundColor: AppTheme
+                          .red, // Usa o vermelho para indicar o bloqueio
+                      duration: Duration(seconds: 4),
+                    ),
+                  );
+                }
+              }
+            } else {
+              _toggleSound();
+            }
+          },
         );
 
         if (_needsWebAudioInteraction) {
@@ -1902,32 +1967,26 @@ class _AlertCardState extends State<AlertCard> {
     } else if (prog.contains("SMILES")) {
       corPrincipal = const Color(0xFFF59E0B);
       corFundo = const Color(0xFF22160A);
-    }
-    else if (prog.contains("TAP")) {
+    } else if (prog.contains("TAP")) {
       corPrincipal = const Color(0xFF2DD4BF);
       corFundo = const Color(0xFF0A1F1C);
-    }
-   else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
+    } else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
       // Vermelho vivo da marca para o texto/ícone (contrasta bem no escuro)
-      corPrincipal = const Color(0xFFD30000); 
+      corPrincipal = const Color(0xFFD30000);
       // Fundo bordô quase preto (segue o padrão LATAM/Azul)
-      corFundo = const Color(0xFF1A0505); 
-    }
-    else if (prog.contains("AADVANTAGE")) {
+      corFundo = const Color(0xFF1A0505);
+    } else if (prog.contains("AADVANTAGE")) {
       corPrincipal = const Color(0xFF0078D2); // Azul clássico da AA
-      corFundo = const Color(0xFF0B172A); // Azul Marinho muito escuro para contraste
-    }
-
-    else if (prog.contains("GOL")) {
+      corFundo = const Color(
+        0xFF0B172A,
+      ); // Azul Marinho muito escuro para contraste
+    } else if (prog.contains("GOL")) {
       corPrincipal = const Color(0xFFFF5C00); //
       corFundo = const Color(0xFF140800);
-    }
-    else if (prog.contains("QATAR")) {
+    } else if (prog.contains("QATAR")) {
       corPrincipal = const Color(0xFF860232); // Cor oficial Qatar
-      corFundo = const Color(0xFF140108);      // Fundo grena quase preto
-    }
-    
-    else{
+      corFundo = const Color(0xFF140108); // Fundo grena quase preto
+    } else {
       corPrincipal = AppTheme.white;
       corFundo = AppTheme.black;
     }
@@ -3104,52 +3163,53 @@ class _LicenseScreenState extends State<LicenseScreen> {
     );
   }
 
-Widget _buildRenovarLicencaButton() {
+  Widget _buildRenovarLicencaButton() {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: AppTheme.green, width: 1.5),
-          foregroundColor: AppTheme.esmerald, // Certifique-se de que essa cor existe no seu AppTheme
+          foregroundColor: AppTheme
+              .esmerald, // Certifique-se de que essa cor existe no seu AppTheme
           backgroundColor: AppTheme.green.withOpacity(0.05),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
         // 🚀 1. Correção: Trocamos "child" por "icon"
-        icon: const Icon(Icons.autorenew_rounded, size: 22), 
+        icon: const Icon(Icons.autorenew_rounded, size: 22),
         label: const Text(
           "RENOVAR LICENÇA",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
         ),
         // 🚀 2. Lógica para buscar a URL no Gist e abrir o site
-        onPressed: _isSaindo ? null : () async {
-try {
-            // Busca a configuração mais recente do seu Gist
-            final config = await DiscoveryService().getConfig();
-            
-            // 🚀 Proteção dupla: verifica se é nulo E se está vazio
-            String urlString = config?.urlRenovacaoLicenca ?? "";
-            if (urlString.trim().isEmpty) {
-              urlString = "https://plamilhasweb.suportvip.com/"; // Fallback seguro
-            }
-            
-            final Uri uri = Uri.parse(urlString);
-            
-            // Lança o navegador externo
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            } else {
-              debugPrint("⚠️ Não foi possível abrir o link: $urlString");
-            }
-          } catch (e) {
-            debugPrint("❌ Erro ao abrir link de renovação: $e");
-          }
-        },
+        onPressed: _isSaindo
+            ? null
+            : () async {
+                try {
+                  // Busca a configuração mais recente do seu Gist
+                  final config = await DiscoveryService().getConfig();
+
+                  // 🚀 Proteção dupla: verifica se é nulo E se está vazio
+                  String urlString = config?.urlRenovacaoLicenca ?? "";
+                  if (urlString.trim().isEmpty) {
+                    urlString =
+                        "https://plamilhasweb.suportvip.com/"; // Fallback seguro
+                  }
+
+                  final Uri uri = Uri.parse(urlString);
+
+                  // Lança o navegador externo
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  } else {
+                    debugPrint("⚠️ Não foi possível abrir o link: $urlString");
+                  }
+                } catch (e) {
+                  debugPrint("❌ Erro ao abrir link de renovação: $e");
+                }
+              },
       ),
     );
   }
