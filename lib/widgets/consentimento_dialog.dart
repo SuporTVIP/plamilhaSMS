@@ -14,7 +14,10 @@ class ConsentimentoSmsDialog extends StatefulWidget {
   const ConsentimentoSmsDialog({super.key, required this.onAccepted});
 
   /// Exibe o diálogo se o usuário ainda não tiver aceitado os termos.
-  static Future<void> showIfNeeded(BuildContext context, VoidCallback onAccepted) async {
+  static Future<void> showIfNeeded(
+    BuildContext context,
+    VoidCallback onAccepted,
+  ) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool hasConsented = prefs.getBool('TERMS_ACCEPTED_SMS') ?? false;
 
@@ -23,7 +26,8 @@ class ConsentimentoSmsDialog extends StatefulWidget {
         showDialog(
           context: context,
           barrierDismissible: false, // O usuário não pode fechar clicando fora
-          builder: (BuildContext context) => ConsentimentoSmsDialog(onAccepted: onAccepted),
+          builder: (BuildContext context) =>
+              ConsentimentoSmsDialog(onAccepted: onAccepted),
         );
       }
     } else {
@@ -41,7 +45,10 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
 
   Future<void> _aceitarTermos() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('TERMS_ACCEPTED_SMS', true); // Salva a assinatura digital do usuário
+    await prefs.setBool(
+      'TERMS_ACCEPTED_SMS',
+      true,
+    ); // Salva a assinatura digital do usuário
     if (mounted) {
       Navigator.of(context).pop();
       widget.onAccepted();
@@ -58,7 +65,12 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
         children: [
           Icon(Icons.shield_outlined, color: Colors.blue, size: 28),
           SizedBox(width: 10),
-          Expanded(child: Text("Permissão para Processamento de SMS", style: TextStyle(fontSize: 18))),
+          Expanded(
+            child: Text(
+              "Permissão para Processamento de SMS",
+              style: TextStyle(fontSize: 18),
+            ),
+          ),
         ],
       ),
       content: SingleChildScrollView(
@@ -93,14 +105,20 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
               title: GestureDetector(
                 onTap: () async {
                   // 🚀 TROQUE PELA SUA URL REAL DA HOSTINGER
-                  final Uri url = Uri.parse('https://familhas.suportvip.com/');
-                  
+                  final Uri url = Uri.parse(
+                    'https://privacidade.suportvip.com/',
+                  );
+
                   if (await canLaunchUrl(url)) {
                     await launchUrl(url, mode: LaunchMode.externalApplication);
                   } else {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Erro ao abrir a Política de Privacidade."))
+                        const SnackBar(
+                          content: Text(
+                            "Erro ao abrir a Política de Privacidade.",
+                          ),
+                        ),
                       );
                     }
                   }
@@ -110,12 +128,13 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
                   style: TextStyle(
                     fontSize: 13,
                     decoration: TextDecoration.underline,
-                    color: Colors.blue
+                    color: Colors.blue,
                   ),
                 ),
               ),
               value: _checkPolitica,
-              onChanged: (bool? val) => setState(() => _checkPolitica = val ?? false),
+              onChanged: (bool? val) =>
+                  setState(() => _checkPolitica = val ?? false),
             ),
 
             // Checkbox 2: Finalidade e Uso
@@ -127,14 +146,16 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
                 style: TextStyle(fontSize: 13),
               ),
               value: _checkFinalidade,
-              onChanged: (bool? val) => setState(() => _checkFinalidade = val ?? false),
+              onChanged: (bool? val) =>
+                  setState(() => _checkFinalidade = val ?? false),
             ),
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(), // Cancela e fecha a janela
+          onPressed: () =>
+              Navigator.of(context).pop(), // Cancela e fecha a janela
           child: const Text("Agora não", style: TextStyle(color: Colors.grey)),
         ),
         ElevatedButton(

@@ -1,12 +1,24 @@
 import 'dart:async';
 
 /// 🛡️ O "Dublê" do navegador para o Android.
-/// Ele finge que existe uma janela e um onMessage, mas não faz nada.
+/// Ele imita toda a estrutura do navegador para o compilador mobile não reclamar.
 class WindowStub {
-  // Simula o onMessage do navegador para não dar erro de compilação
+  // Simula html.window.onMessage
+  Stream<dynamic> get onMessage => const Stream.empty();
+  
+  // 🚀 Simula html.window.navigator
+  NavigatorStub get navigator => NavigatorStub();
+}
+
+class NavigatorStub {
+  // 🚀 Simula html.window.navigator.serviceWorker
+  ServiceWorkerContainerStub get serviceWorker => ServiceWorkerContainerStub();
+}
+
+class ServiceWorkerContainerStub {
+  // 🚀 Simula html.window.navigator.serviceWorker.onMessage
   Stream<dynamic> get onMessage => const Stream.empty();
 }
 
-// 🚀 O PULO DO GATO: Criamos uma variável global chamada 'window'
-// para que o código 'html.window.onMessage' funcione no Android.
+// 🚀 Fornece a instância global 'window' para o código html.window no Android [cite: 5]
 WindowStub get window => WindowStub();
