@@ -32,7 +32,7 @@ void sincronizarFiltrosParaSW(Map<String, dynamic> filtros) {
             tx.objectStore('config').put({ key: 'USER_FILTERS', value: $filtrosJson });
           };
         } catch(e) {
-          console.warn('[PlamilhasWeb] Erro ao salvar filtros no IndexedDB:', e);
+          console.warn('[PramilhasWeb] Erro ao salvar filtros no IndexedDB:', e);
         }
       })();
     ''']);

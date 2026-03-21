@@ -50,6 +50,8 @@ class DiscoveryConfig {
   //URL do checkout para renovação de licença, usada no diálogo de versão mínima.
   final String urlRenovacaoLicenca;
 
+  final String urlSuporte;
+
   const DiscoveryConfig({
     required this.gasUrl,
     required this.status,
@@ -63,14 +65,16 @@ class DiscoveryConfig {
     this.smsBlacklist = const [],
     this.updateUrl = '',
     this.urlRenovacaoLicenca = '',
+    this.urlSuporte = "",
   });
 
   factory DiscoveryConfig.fromJson(Map<String, dynamic> json) {
     return DiscoveryConfig(
       gasUrl: json['gas_url'] ?? '',
       status: json['status'] ?? 'active',
-      whatsappGroupUrl: json['whatsapp_group_balcao_url']
-          ?? 'https://chat.whatsapp.com/G5kPwwdBvagEzBKCSo0TEX',
+      whatsappGroupUrl:
+          json['whatsapp_group_balcao_url'] ??
+          'https://chat.whatsapp.com/G5kPwwdBvagEzBKCSo0TEX',
       whatsappGroupVipUrl: json['whatsapp_group_vip_url'] ?? '',
       maintenanceMode: json['maintenance_mode'] ?? false,
       minVersion: json['min_version'] ?? '0.1.0',
@@ -80,6 +84,7 @@ class DiscoveryConfig {
       smsBlacklist: List<String>.from(json['sms_blacklist'] ?? []),
       updateUrl: json['update_url'] ?? '',
       urlRenovacaoLicenca: json['url_renovacao_licenca'] ?? '',
+      urlSuporte: json['url_Suporte'] ?? '',
     );
   }
 
@@ -99,7 +104,7 @@ class DiscoveryService {
 
   /// Chaves gravadas no SharedPreferences para o Kotlin ler.
   /// O Kotlin acessa como "flutter.<chave>" no SharedPreferences nativo.
-  static const String keyGasUrl       = "DISCOVERY_GAS_URL";
+  static const String keyGasUrl = "DISCOVERY_GAS_URL";
   static const String keySmsBlacklist = "DISCOVERY_SMS_BLACKLIST";
 
   DiscoveryConfig? _cachedConfig;
@@ -112,8 +117,9 @@ class DiscoveryService {
     try {
       final String url =
           "$_discoveryUrl?v=${DateTime.now().millisecondsSinceEpoch}";
-      final http.Response response =
-          await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      final http.Response response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         await prefs.setString(_keyCache, response.body);
@@ -122,8 +128,10 @@ class DiscoveryService {
 
         // Grava as chaves que o Kotlin precisa para não precisar chamar o Gist
         await prefs.setString(keyGasUrl, _cachedConfig!.gasUrl);
-        await prefs.setString(keySmsBlacklist,
-            jsonEncode(_cachedConfig!.smsBlacklist));
+        await prefs.setString(
+          keySmsBlacklist,
+          jsonEncode(_cachedConfig!.smsBlacklist),
+        );
 
         return _cachedConfig;
       }

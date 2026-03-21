@@ -149,8 +149,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v4',
-        'Emissões FãMilhasVIP',
+        'emissao_vip_v5',
+        'Alertas Sonoros VIP',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
         playSound: true,
@@ -158,11 +158,22 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       ),
     );
 
+    // 🔕 Canal Silencioso (Obrigatório registrar para o Cooldown funcionar)
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        'emissao_vip_v5_silent', // Novo ID
+        'Alertas Silenciosos (Cooldown)',
+        importance: Importance.low, // 🚀 LOW garante que não faz som nem vibra
+        playSound: false,
+        enableVibration: false,
+      ),
+    );
+
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
     final String statusSom = somAtivo ? "🔊 SONORA" : "🔕 SILENCIOSA";
     final String idCanal = somAtivo
-        ? 'emissao_vip_v4'
-        : 'emissao_vip_v4_silent';
+        ? 'emissao_vip_v5'
+        : 'emissao_vip_v5_silent';
     debugPrint(
       "🔔 [FCM-UX] Preparando Notificação $statusSom via canal: $idCanal",
     );
@@ -243,7 +254,7 @@ void main() async {
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v4',
+        'emissao_vip_v5',
         'Alertas Sonoros',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -255,9 +266,9 @@ void main() async {
     // 🔕 CANAL SILENCIOSO (Novo ID)
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v4_silent', // ID Diferente
+        'emissao_vip_v5_silent', // ID Diferente
         'Alertas Silenciosos',
-        importance: Importance.high,
+        importance: Importance.low,
         playSound: false,
         enableVibration: true,
       ),
@@ -335,7 +346,7 @@ class MilhasAlertApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PlamilhaSVIP',
+      title: 'PramilhaSVIP',
       theme: ThemeData.dark().copyWith(
         primaryColor: AppTheme.accent,
         scaffoldBackgroundColor: AppTheme.bg,
@@ -560,7 +571,7 @@ class _SplashRouterState extends State<SplashRouter>
       textBaseline: TextBaseline.alphabetic,
       children: [
         Text(
-          "PLAMILHAS",
+          "PRAMILHAS",
           style: TextStyle(
             color: Colors.white,
             fontSize: 28,
@@ -667,6 +678,9 @@ class _MainNavigatorState extends State<MainNavigator>
   int _currentIndex = 1; // Começa na aba central (Licença)
   final AlertService _alertService = AlertService();
   final AudioPlayer _audioPlayer = AudioPlayer();
+  // ⏱️ Controle de Concorrência da Sirene
+  DateTime? _ultimoToqueSiren;
+  final int _cooldownSegundos = 15;
 
   final List<Widget> _screens = const [
     AlertsScreen(),
@@ -692,9 +706,12 @@ class _MainNavigatorState extends State<MainNavigator>
     required String titulo,
     required String corpo,
     String? payload,
+    bool forcarSilencioso = false, // 👈 Nova flag
   }) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
+    // Se o usuário desligou geral OU se o sistema de cooldown mandou calar a boca:
+    final bool somAtivo =
+        (prefs.getBool('SOUND_ENABLED') ?? true) && !forcarSilencioso;
 
     await flutterLocalNotificationsPlugin.show(
       id: idNotificacao,
@@ -702,14 +719,15 @@ class _MainNavigatorState extends State<MainNavigator>
       body: corpo,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          somAtivo ? 'emissao_vip_v4' : 'emissao_vip_v4_silent',
+          somAtivo ? 'emissao_vip_v5' : 'emissao_vip_v5_silent',
           'Emissões FãMilhasVIP',
-          importance: somAtivo ? Importance.max : Importance.high,
+          importance: somAtivo ? Importance.max : Importance.low,
           priority: Priority.high,
           sound: somAtivo
               ? const RawResourceAndroidNotificationSound('alerta')
               : null,
           playSound: somAtivo,
+          enableVibration: somAtivo,
         ),
       ),
       payload: payload,
@@ -818,15 +836,26 @@ class _MainNavigatorState extends State<MainNavigator>
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
 
-    if (somAtivo) {
-      try {
-        // 🚀 Forçamos o stop e o play para o navegador "acordar" o áudio
-        await _audioPlayer.stop();
-        await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
-        debugPrint("📢 [WEB] Sirene tocada com sucesso!");
-      } catch (e) {
-        debugPrint("🔇 Erro ao tocar sirene web: $e");
-      }
+    if (!somAtivo) return;
+
+    final agora = DateTime.now();
+
+    // 🛡️ O ESCUDO ANTI-AMBULÂNCIA: Verifica se está no tempo de recarga
+    if (_ultimoToqueSiren != null &&
+        agora.difference(_ultimoToqueSiren!).inSeconds < _cooldownSegundos) {
+      debugPrint(
+        "🔇 [COOLDOWN] Sirene WEB silenciada. Próximo som em ${_cooldownSegundos - agora.difference(_ultimoToqueSiren!).inSeconds}s.",
+      );
+      return; // 🛑 Aborta o som, mas o card na tela já foi desenhado!
+    }
+
+    try {
+      _ultimoToqueSiren = agora; // ⏱️ Atualiza o relógio com a hora do disparo
+      await _audioPlayer.stop();
+      await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+      debugPrint("📢 [WEB] Sirene tocada com sucesso!");
+    } catch (e) {
+      debugPrint("🔇 Erro ao tocar sirene web: $e");
     }
   }
 
@@ -990,16 +1019,29 @@ class _MainNavigatorState extends State<MainNavigator>
       );
 
       if (somAtivo) {
-        // 🚀 LOG 9: Disparo com som
-        debugPrint(
-          "🔔 [FOREGROUND] Acionando o pop-up nativo no topo da tela...",
-        );
+        final agora = DateTime.now();
+        bool forcarSilencioso = false;
+
+        // 🛡️ O ESCUDO NO MOBILE: Se chegou muito rápido, joga pro canal mudo
+        if (_ultimoToqueSiren != null &&
+            agora.difference(_ultimoToqueSiren!).inSeconds <
+                _cooldownSegundos) {
+          debugPrint("🔇 [COOLDOWN] Push Mobile silenciado para evitar spam.");
+          forcarSilencioso = true;
+        } else {
+          _ultimoToqueSiren = agora; // ⏱️ Se vai tocar som, atualiza o relógio
+        }
+
+        debugPrint("🔔 [FOREGROUND] Acionando o pop-up nativo...");
+
+        // 🚀 O pulo do gato: alteramos temporariamente a preferência do som só para este disparo
         await _tocarNotificacaoLocal(
           idNotificacao: novoAlerta.id.hashCode,
           titulo: "✈️ Oportunidade: $programa",
           corpo: trecho,
-          payload:
-              novoAlerta.id, // O ID do alerta para o blur dourado funcionar
+          payload: novoAlerta.id,
+          forcarSilencioso:
+              forcarSilencioso, // 👈 Passe essa flag para a função
         );
       } else {
         debugPrint(
@@ -3001,12 +3043,175 @@ class _LicenseScreenState extends State<LicenseScreen> {
         ],
       ),
       actions: [
+        // 🚀 Novo botão de suporte
+        IconButton(
+          icon: const Icon(Icons.help_outline, color: AppTheme.muted),
+          tooltip: 'Suporte',
+          onPressed: _mostrarDialogoSuporte, // 🚀 Chama o método que criamos
+        ),
+        // Botão de recarga existente
         IconButton(
           icon: const Icon(Icons.refresh, color: AppTheme.muted),
+          tooltip: 'Recarregar Dados',
           onPressed: _inicializarSistema,
         ),
+        const SizedBox(width: 8),
       ],
     );
+  }
+
+  /// 🚀 1. Chama o Popup Intermediário
+  Future<void> _mostrarDialogoSuporte() async {
+    final config = await DiscoveryService().getConfig();
+
+    // Agora o Gist só precisa ter o e-mail limpo! Ex: master@devs.suportvip.com
+    String emailDestino = config?.urlSuporte ?? "master@devs.suportvip.com";
+
+    // Faxina por segurança (caso tenha sobrado um mailto: no Gist)
+    emailDestino = emailDestino.replaceAll('mailto:', '').split('?').first;
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext ctx) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Row(
+            children: [
+              Icon(
+                Icons.mark_email_read_outlined,
+                color: AppTheme.accent,
+                size: 24,
+              ),
+              SizedBox(width: 10),
+              Text(
+                "Suporte VIP",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            "Você será redirecionado para o seu aplicativo de e-mail.\n\n"
+            "Para um atendimento mais rápido, seja o mais detalhista possível na descrição e não hesite em anexar imagens/prints da tela mostrando o problema.",
+            style: TextStyle(color: AppTheme.text, height: 1.4, fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text(
+                "CANCELAR",
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: const Icon(Icons.send, size: 18),
+              label: const Text(
+                "ABRIR E-MAIL",
+                style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _dispararEmailSincrono(emailDestino);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 🚀 2. Constrói o Link Manualmente (100% à prova de falhas)
+  /// 🚀 2. Constrói o Link Manualmente (100% à prova de falhas)
+  Future<void> _dispararEmailSincrono(String emailDestino) async {
+    final String tokenAtual = _userToken;
+    final String emailAtual = _userEmail;
+
+    final String corpo =
+        '''
+Olá Equipe PramilhaSVIP,
+
+Gostaria de solicitar suporte para o seguinte assunto:
+( ) Problema com Notificações
+( ) Erro na Renovação de Licença
+( ) Bug Visual ou Travamento
+( ) Sugestão / Outros
+
+Descrição detalhada:
+[Escreva aqui o que está acontecendo e anexe imagens se necessário]
+
+---
+Dados para identificação (Não apagar):
+Licença: $tokenAtual
+E-mail: $emailAtual
+''';
+
+    // 🚀 Codificação manual e cirúrgica
+    final String subjectEncoded = Uri.encodeComponent(
+      "Suporte Técnico - PramilhaSVIP",
+    );
+    final String bodyEncoded = Uri.encodeComponent(corpo);
+
+    try {
+      // 🛡️ PLANO B UNIVERSAL: Sempre copia o e-mail por segurança
+      await Clipboard.setData(ClipboardData(text: emailDestino));
+
+      if (kIsWeb) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Abrindo webmail... O e-mail $emailDestino foi copiado caso precise!',
+              ),
+              backgroundColor: AppTheme.accent,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+
+        // 🌐 SOLUÇÃO WEB: Abre o GMAIL WEB direto no navegador do usuário!
+        // (Se preferir o Outlook Web, use o link comentado abaixo)
+        // final String webUrl = "https://outlook.live.com/mail/0/deeplink/compose?to=$emailDestino&subject=$subjectEncoded&body=$bodyEncoded";
+
+        final String webUrl =
+            "https://mail.google.com/mail/?view=cm&fs=1&to=$emailDestino&su=$subjectEncoded&body=$bodyEncoded";
+
+        await launchUrl(
+          Uri.parse(webUrl),
+          mode: LaunchMode.externalApplication, // Abre numa nova aba lindamente
+        );
+        debugPrint("📧 [WEB] Redirecionado para o Webmail com sucesso!");
+      } else {
+        // 📱 MOBILE: launchUrl com mailto (Funciona perfeito no Android/iOS)
+        final String mailtoLink =
+            "mailto:$emailDestino?subject=$subjectEncoded&body=$bodyEncoded";
+
+        await launchUrl(
+          Uri.parse(mailtoLink),
+          mode: LaunchMode.externalApplication,
+        );
+        debugPrint("📧 [MOBILE] App de e-mail nativo acionado!");
+      }
+    } catch (e) {
+      debugPrint("❌ [SUPORTE] Erro ao abrir e-mail: $e");
+    }
   }
 
   Widget _buildStatusCard() {
@@ -3195,7 +3400,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                   String urlString = config?.urlRenovacaoLicenca ?? "";
                   if (urlString.trim().isEmpty) {
                     urlString =
-                        "https://plamilhasweb.suportvip.com/"; // Fallback seguro
+                        "https://pramilhasweb.suportvip.com/"; // Fallback seguro
                   }
 
                   final Uri uri = Uri.parse(urlString);

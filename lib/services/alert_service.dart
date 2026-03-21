@@ -367,7 +367,7 @@ class AlertService {
         final cacheAtualizado = [
           ...novosSerializados,
           ...cacheAtual,
-        ].take(100).toList();
+        ].take(150).toList();
         await prefs.setStringList(_keyCacheV2, cacheAtualizado);
 
         // Grava a data do cache para a limpeza diária detectar virada de dia

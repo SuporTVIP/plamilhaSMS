@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 
     <application
-        android:label="PlamilhaSVIP"
+        android:label="PramilhaSVIP"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
 

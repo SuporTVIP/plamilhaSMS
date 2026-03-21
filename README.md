@@ -1,4 +1,4 @@
-# Milhas Alert (Plamilhas VIP) - Guia Técnico
+# Milhas Alert (PramilhaSVIP) - Guia Técnico
 
 Bem-vindo à documentação técnica do Milhas Alert. Este documento foi desenhado para ajudar desenvolvedores iniciantes a entenderem a arquitetura e o funcionamento do aplicativo.
 

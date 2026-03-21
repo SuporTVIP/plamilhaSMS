@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart'; // 🚀 Novo import
 import 'core/theme.dart';
 import 'services/auth_service.dart';
-import 'main.dart'; 
+import 'services/discovery_service.dart'; // 🚀 Novo import
+import 'main.dart';
 
-/// Tela de Login e Ativação do Aplicativo.
-///
-/// Permite que o usuário insira seu e-mail e chave de licença para ativar o app.
 class LoginScreen extends StatefulWidget {
-  /// Construtor padrão para [LoginScreen].
   const LoginScreen({super.key});
 
   @override
@@ -34,7 +32,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// Recupera o último e-mail e token utilizados para facilitar o re-login.
   Future<void> _carregarMemoriaDosInputs() async {
     final Map<String, String> dadosViejos = await _auth.getLastLoginData();
     if (dadosViejos['email']!.isNotEmpty) {
@@ -45,10 +42,23 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// 🚀 FUNÇÃO PARA COLAR TEXTO DA ÁREA DE TRANSFERÊNCIA
-  ///
-  /// Analogia: Facilita a vida do usuário permitindo colar a chave de licença
-  /// direto do WhatsApp/E-mail, similar ao comando `navigator.clipboard.readText()` no JS.
+  // 🚀 Redireciona para o site de vendas buscando a URL dinâmica do Gist
+  Future<void> _abrirSiteVendas() async {
+    try {
+      final config = await DiscoveryService().getConfig();
+      // Se não encontrar no Gist, usa o fallback padrão
+      String urlString =
+          config?.urlRenovacaoLicenca ?? "https://plamilhasweb.suportvip.com/";
+      final Uri uri = Uri.parse(urlString);
+
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      debugPrint("Erro ao abrir link de vendas: $e");
+    }
+  }
+
   Future<void> _colarDoClipboard(TextEditingController controller) async {
     final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
     if (data != null && data.text != null) {
@@ -58,16 +68,15 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Texto colado com sucesso!"), 
+            content: Text("Texto colado com sucesso!"),
             backgroundColor: AppTheme.green,
             duration: Duration(seconds: 1),
-          )
+          ),
         );
       }
     }
   }
 
-  /// Tenta realizar a autenticação no servidor.
   Future<void> _ativarSistema() async {
     final String email = _emailController.text.trim();
     final String token = _tokenController.text.trim();
@@ -76,15 +85,17 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Preencha todos os campos!"),
-          backgroundColor: AppTheme.red
-        )
+          backgroundColor: AppTheme.red,
+        ),
       );
       return;
     }
 
     setState(() => _isLoading = true);
-
-    final Map<String, dynamic> resultado = await _auth.autenticarNoServidor(email, token);
+    final Map<String, dynamic> resultado = await _auth.autenticarNoServidor(
+      email,
+      token,
+    );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -93,21 +104,22 @@ class _LoginScreenState extends State<LoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("✅ ${resultado['mensagem']}"),
-          backgroundColor: AppTheme.green
-        )
+          backgroundColor: AppTheme.green,
+        ),
       );
-      
-      // Navega para a tela principal e remove a tela de login da pilha (não volta ao apertar 'back').
+
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (BuildContext context) => const MainNavigator()),
+        MaterialPageRoute(
+          builder: (BuildContext context) => const MainNavigator(),
+        ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("❌ Erro: ${resultado['mensagem']}"),
-          backgroundColor: AppTheme.red
-        )
+          backgroundColor: AppTheme.red,
+        ),
       );
     }
   }
@@ -117,8 +129,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: Center(
-        // SingleChildScrollView: Permite que o conteúdo role se for maior que a tela.
-        // Analogia: Essencial em formulários para que o teclado, ao subir, não cubra os campos de texto.
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
@@ -133,8 +143,40 @@ class _LoginScreenState extends State<LoginScreen> {
               _buildTokenField(),
               const SizedBox(height: 40),
               _buildSubmitButton(),
+              const SizedBox(height: 24), // Espaçamento
+              _buildNoAccessButton(), // 🚀 O NOVO BOTÃO AQUI
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // 🚀 Botão para quem ainda não é VIP
+  Widget _buildNoAccessButton() {
+    return TextButton(
+      onPressed: _abrirSiteVendas,
+      style: TextButton.styleFrom(foregroundColor: AppTheme.muted),
+      child: RichText(
+        textAlign: TextAlign.center,
+        text: const TextSpan(
+          style: TextStyle(
+            color: AppTheme.muted,
+            fontSize: 12,
+            fontFamily: 'Inter',
+            letterSpacing: 0.5,
+          ),
+          children: [
+            TextSpan(text: "AINDA NÃO TEM ACESSO? "),
+            TextSpan(
+              text: "CLIQUE AQUI",
+              style: TextStyle(
+                color: AppTheme.accent,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -147,17 +189,14 @@ class _LoginScreenState extends State<LoginScreen> {
         const Icon(Icons.radar, color: AppTheme.accent, size: 40),
         const SizedBox(width: 12),
         Text(
-          "PLAMILHAS",
+          "PRAMILHAS",
           style: TextStyle(
             fontFamily: 'Inter',
             fontSize: 40,
             fontWeight: FontWeight.w900,
             color: Colors.white,
             shadows: [
-              Shadow(
-                color: AppTheme.accent.withOpacity(0.5),
-                blurRadius: 20
-              )
+              Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20),
             ],
           ),
         ),
@@ -169,10 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
             fontWeight: FontWeight.w300,
             color: AppTheme.accent,
             shadows: [
-              Shadow(
-                color: AppTheme.accent.withOpacity(0.5),
-                blurRadius: 20
-              )
+              Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20),
             ],
           ),
         ),
@@ -199,9 +235,9 @@ class _LoginScreenState extends State<LoginScreen> {
               color: AppTheme.text,
               fontSize: 13,
               fontWeight: FontWeight.w500,
-              letterSpacing: 1
+              letterSpacing: 1,
             ),
-          )
+          ),
         ],
       ),
     );
@@ -234,7 +270,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildTokenField() {
     return TextField(
       controller: _tokenController,
-      style: const TextStyle(color: Colors.white, letterSpacing: 2, fontSize: 14),
+      style: const TextStyle(
+        color: Colors.white,
+        letterSpacing: 2,
+        fontSize: 14,
+      ),
       decoration: InputDecoration(
         labelText: "Chave de Licença",
         labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
@@ -242,7 +282,11 @@ class _LoginScreenState extends State<LoginScreen> {
         fillColor: AppTheme.card,
         prefixIcon: const Icon(Icons.key, color: AppTheme.muted, size: 20),
         suffixIcon: IconButton(
-          icon: const Icon(Icons.content_paste, color: AppTheme.accent, size: 20),
+          icon: const Icon(
+            Icons.content_paste,
+            color: AppTheme.accent,
+            size: 20,
+          ),
           tooltip: "Colar Licença",
           onPressed: () => _colarDoClipboard(_tokenController),
         ),
@@ -268,21 +312,30 @@ class _LoginScreenState extends State<LoginScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.accent,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           elevation: 10,
           shadowColor: AppTheme.accent.withOpacity(0.3),
         ),
         onPressed: _isLoading ? null : _ativarSistema,
         child: _isLoading
-          ? const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-            )
-          : const Text(
-              "INICIAR SESSÃO",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.5)
-            ),
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Text(
+                "INICIAR SESSÃO",
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
       ),
     );
   }

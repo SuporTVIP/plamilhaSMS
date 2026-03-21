@@ -79,7 +79,7 @@ class _ConsentimentoSmsDialogState extends State<ConsentimentoSmsDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              "O PlamilhasVIP pode processar mensagens SMS recebidas neste dispositivo apenas para identificar mensagens transacionais operacionais compatíveis com os filtros (ex: comunicações de bancos e companhias aéreas).",
+              "O PramilhaSVIP pode processar mensagens SMS recebidas neste dispositivo apenas para identificar mensagens transacionais operacionais compatíveis com os filtros (ex: comunicações de bancos e companhias aéreas).",
               style: TextStyle(fontSize: 14),
             ),
             const SizedBox(height: 12),
