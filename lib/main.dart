@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
-
+import 'package:share_plus/share_plus.dart'; // 🚀 NOVO IMPORT
 import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -117,7 +117,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final UserFilters filtros = await UserFilters.load();
 
   // Verifica filtros APÓS ter garantido que o dado está salvo
-  if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+  if (!filtros.passaNoFiltroBasico(
+    programa,
+    trecho,
+    detalhes: detalhes,
+    contexto: 'fcm-background',
+  )) {
     debugPrint(
       "⛔ [FCM-PORTEIRO] BARRADO! O Voo não atende aos critérios do usuário (Mas já está salvo).",
     );
@@ -997,7 +1002,12 @@ class _MainNavigatorState extends State<MainNavigator>
       );
       final UserFilters filtros = await UserFilters.load();
 
-      if (!filtros.passaNoFiltroBasico(programa, trecho, detalhes: detalhes)) {
+      if (!filtros.passaNoFiltroBasico(
+        programa,
+        trecho,
+        detalhes: detalhes,
+        contexto: 'foreground-popup',
+      )) {
         debugPrint(
           "⛔ [FOREGROUND] Push bloqueado pelos filtros visuais (Mas já salvo no banco!).",
         );
@@ -1468,9 +1478,15 @@ class _AlertsScreenState extends State<AlertsScreen>
   }
 
   void _aplicarFiltrosNaTela() {
+    debugPrint(
+      "🔎 [UI-FILTER] Reaplicando filtros na lista. total=${_listaAlertasTodos.length}",
+    );
     _listaAlertasFiltrados = _listaAlertasTodos
         .where((Alert a) => _filtros.alertaPassaNoFiltro(a))
         .toList();
+    debugPrint(
+      "📋 [UI-FILTER] Resultado da lista filtrada: exibidos=${_listaAlertasFiltrados.length} ocultos=${_listaAlertasTodos.length - _listaAlertasFiltrados.length}",
+    );
   }
 
   @override
@@ -1531,6 +1547,57 @@ class _AlertsScreenState extends State<AlertsScreen>
       });
     }
   }
+
+// =========================================================================
+  // 🚀 NOVOS HELPERS DE FILTRO (AGORA NO LUGAR CERTO)
+  // =========================================================================
+
+  bool get _hasActiveFilters {
+    return _filtros.origens.isNotEmpty ||
+        _filtros.destinos.isNotEmpty ||
+        !_filtros.azulAtivo ||
+        !_filtros.latamAtivo ||
+        !_filtros.smilesAtivo ||
+        !_filtros.outrosAtivo;
+  }
+
+  void _resetarCompanhias() async {
+    setState(() {
+      _filtros.azulAtivo = true;
+      _filtros.latamAtivo = true;
+      _filtros.smilesAtivo = true;
+      _filtros.outrosAtivo = true;
+      _aplicarFiltrosNaTela();
+      _rebuildIndex();
+    });
+    await _filtros.save();
+  }
+
+  void _removerFiltroLocal(bool isOrigem, String local) async {
+    setState(() {
+      if (isOrigem) {
+        _filtros.origens.remove(local);
+      } else {
+        _filtros.destinos.remove(local);
+      }
+      _aplicarFiltrosNaTela();
+      _rebuildIndex();
+    });
+    await _filtros.save();
+  }
+
+  void _limparTodosFiltros() async {
+    setState(() {
+      _filtros = UserFilters(); 
+      _aplicarFiltrosNaTela();
+      _rebuildIndex();
+    });
+    await _filtros.save();
+  }
+
+  // =========================================================================
+  // 🚀 INTERFACE VISUAL DA TELA DE ALERTAS
+  // =========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -1624,15 +1691,10 @@ class _AlertsScreenState extends State<AlertsScreen>
           ),
           tooltip: "Ligar/Desligar Som",
           onPressed: () async {
-            // 🚀 1. Adicionamos o 'async' aqui
             if (_needsWebAudioInteraction) {
-              // Assume temporariamente que vai dar certo para a UI responder rápido
               setState(() => _needsWebAudioInteraction = false);
-
               try {
-                // 🚀 2. Colocamos o 'await' para o try-catch conseguir capturar o erro
                 await _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
-
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -1644,18 +1706,14 @@ class _AlertsScreenState extends State<AlertsScreen>
                 }
               } catch (e) {
                 debugPrint("🔇 [WEB] Erro ao destravar áudio: $e");
-
                 if (mounted) {
-                  // 🛡️ 3. Se der erro (bloqueio), devolvemos o botão para o estado de alerta (!)
                   setState(() => _needsWebAudioInteraction = true);
-
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text(
                         "🔇 O navegador bloqueou o áudio. O app continuará no modo silencioso.",
                       ),
-                      backgroundColor: AppTheme
-                          .red, // Usa o vermelho para indicar o bloqueio
+                      backgroundColor: AppTheme.red,
                       duration: Duration(seconds: 4),
                     ),
                   );
@@ -1669,80 +1727,191 @@ class _AlertsScreenState extends State<AlertsScreen>
 
         if (_needsWebAudioInteraction) {
           return btn
-              .animate(
-                onPlay: (AnimationController controller) => controller.repeat(),
-              )
+              .animate(onPlay: (AnimationController controller) => controller.repeat())
               .shake(hz: 4, curve: Curves.easeInOut, duration: 600.ms)
               .then(delay: 1500.ms);
         }
-
         return btn;
       },
     );
   }
 
   Widget _buildFilterButton() {
-    final bool hasActiveFilters =
-        _filtros.origens.isNotEmpty ||
-        _filtros.destinos.isNotEmpty ||
-        !_filtros.azulAtivo ||
-        !_filtros.latamAtivo ||
-        !_filtros.smilesAtivo;
     return IconButton(
       icon: Icon(
         Icons.tune,
-        color: hasActiveFilters ? AppTheme.green : AppTheme.accent,
+        color: _hasActiveFilters ? AppTheme.green : AppTheme.accent,
       ),
       tooltip: "Filtros",
       onPressed: _abrirPainelFiltros,
     );
   }
 
-  Widget _buildBody() {
-    if (_isCarregando) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppTheme.accent),
+  Widget _buildActiveFiltersRow() {
+    if (!_hasActiveFilters) return const SizedBox.shrink();
+
+    final List<Widget> chips = [];
+
+    if (!_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo || !_filtros.outrosAtivo) {
+      final List<String> ativas = [];
+      if (_filtros.azulAtivo) ativas.add("Azul");
+      if (_filtros.latamAtivo) ativas.add("Latam");
+      if (_filtros.smilesAtivo) ativas.add("Smiles");
+      if (_filtros.outrosAtivo) ativas.add("Outros");
+
+      final String label = ativas.isEmpty ? "Nenhuma Cia" : ativas.join(', ');
+      chips.add(_buildMiniChip("✈️ $label", _resetarCompanhias));
+    }
+
+    for (String origem in _filtros.origens) {
+      final sigla = origem.split(' - ').first; 
+      chips.add(_buildMiniChip("🛫 $sigla", () => _removerFiltroLocal(true, origem)));
+    }
+
+    for (String destino in _filtros.destinos) {
+      final sigla = destino.split(' - ').first;
+      chips.add(_buildMiniChip("🛬 $sigla", () => _removerFiltroLocal(false, destino)));
+    }
+
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: chips.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) => Center(child: chips[index]),
+      ),
+    );
+  }
+
+  Widget _buildMiniChip(String label, VoidCallback onDeleted) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.accent.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.accent.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(color: AppTheme.text, fontSize: 12, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: onDeleted,
+            borderRadius: BorderRadius.circular(12),
+            child: const Padding(
+              padding: EdgeInsets.all(4.0),
+              child: Icon(Icons.close, size: 14, color: AppTheme.accent),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmartEmptyState() {
+    if (_hasActiveFilters) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.filter_alt_off, size: 64, color: AppTheme.yellow),
+            const SizedBox(height: 16),
+            const Text('Nenhuma emissão atende aos seus filtros.', style: TextStyle(color: AppTheme.text, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('Tente remover algumas restrições.', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.red.withOpacity(0.1),
+                foregroundColor: AppTheme.red,
+                side: const BorderSide(color: AppTheme.red),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.delete_sweep),
+              label: const Text("LIMPAR TODOS OS FILTROS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+              onPressed: _limparTodosFiltros,
+            ),
+          ],
+        ),
       );
     }
 
-    // ── Banners do Gist (maintenance + announcement) ────────────────────
-    // São inseridos como primeiros itens da lista via CustomScrollView + Slivers,
-    // para que façam parte do scroll junto com os cards de alerta.
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.flight, size: 64, color: AppTheme.border),
+          const SizedBox(height: 16),
+          const Text('Nenhuma emissão no momento.', style: TextStyle(color: AppTheme.text, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('Aguarde, o radar VIP capturará logo mais.', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSkeletonLoading() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 6, 
+      itemBuilder: (context, index) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          height: 90, 
+          decoration: BoxDecoration(
+            color: AppTheme.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(8)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(width: 180, height: 14, color: AppTheme.surface),
+                      const SizedBox(height: 8),
+                      Container(width: 100, height: 12, color: AppTheme.surface),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    )
+    .animate(onPlay: (controller) => controller.repeat())
+    .shimmer(duration: 1200.ms, color: Colors.white12);
+  }
+
+  Widget _buildBody() {
+    if (_isCarregando) {
+      return _buildSkeletonLoading(); 
+    }
+
     final List<Widget> banners = [
       if (_maintenanceMode) _buildMaintenanceBanner(),
       if (_announcement.isNotEmpty) _buildAnnouncementCard(),
     ];
 
-    if (_listaAlertasFiltrados.isEmpty) {
-      return Column(
-        children: [
-          ...banners,
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.flight, size: 64, color: AppTheme.border),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Nenhuma emissão encontrada.',
-                    style: TextStyle(color: AppTheme.muted),
-                  ),
-                  const Text(
-                    'Verifique seus filtros ou aguarde.',
-                    style: TextStyle(color: AppTheme.muted, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return CustomScrollView(
+    Widget mainContent = CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
-        // Banners no topo, fora do itemBuilder
         if (banners.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
@@ -1750,34 +1919,59 @@ class _AlertsScreenState extends State<AlertsScreen>
               child: Column(children: banners),
             ),
           ),
-        // Cards de alerta
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate((
-              BuildContext context,
-              int index,
-            ) {
-              final Alert alerta = _listaAlertasFiltrados[index];
-              final String trechoNorm = _normalizar(alerta.trecho);
-              final String idNorm = _normalizar(alerta.id);
-              final bool isGolden =
-                  _highlightedTrecho != null &&
-                  (trechoNorm.contains(_highlightedTrecho!) ||
-                      idNorm.contains(_highlightedTrecho!));
-              return AlertCard(
-                key: ValueKey(alerta.id),
-                alerta: alerta,
-                isHighlighted: isGolden,
-              );
-            }, childCount: _listaAlertasFiltrados.length),
+          
+        if (_listaAlertasFiltrados.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: _buildSmartEmptyState(), 
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
+                final Alert alerta = _listaAlertasFiltrados[index];
+                final String trechoNorm = _normalizar(alerta.trecho);
+                final String idNorm = _normalizar(alerta.id);
+                final bool isGolden =
+                    _highlightedTrecho != null &&
+                    (trechoNorm.contains(_highlightedTrecho!) ||
+                        idNorm.contains(_highlightedTrecho!));
+                
+                return AlertCard(
+                  key: ValueKey(alerta.id),
+                  alerta: alerta,
+                  isHighlighted: isGolden,
+                );
+              }, childCount: _listaAlertasFiltrados.length),
+            ),
+          ),
+      ],
+    );
+
+    return Column(
+      children: [
+        _buildActiveFiltersRow(), 
+        Expanded(
+          child: RefreshIndicator( 
+            color: AppTheme.accent,
+            backgroundColor: AppTheme.surface,
+            onRefresh: () async {
+              await _alertService.forceSync(silencioso: false);
+              if (mounted && _isSoundEnabled && !kIsWeb) {
+                _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+              }
+            },
+            child: mainContent,
           ),
         ),
       ],
     );
   }
 
-  // ── Card de manutenção ────────────────────────────────────────────────
   Widget _buildMaintenanceBanner() {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1789,20 +1983,12 @@ class _AlertsScreenState extends State<AlertsScreen>
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.build_circle_outlined,
-            color: AppTheme.yellow,
-            size: 20,
-          ),
+          const Icon(Icons.build_circle_outlined, color: AppTheme.yellow, size: 20),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
               'Sistema em manutenção. Algumas funcionalidades podem estar limitadas.',
-              style: TextStyle(
-                color: AppTheme.yellow,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(color: AppTheme.yellow, fontSize: 12, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -1810,7 +1996,6 @@ class _AlertsScreenState extends State<AlertsScreen>
     );
   }
 
-  // ── Card de announcement dinâmico ─────────────────────────────────────
   Widget _buildAnnouncementCard() {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1828,12 +2013,7 @@ class _AlertsScreenState extends State<AlertsScreen>
           Expanded(
             child: Text(
               _announcement,
-              style: const TextStyle(
-                color: AppTheme.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.4,
-              ),
+              style: const TextStyle(color: AppTheme.text, fontSize: 12, fontWeight: FontWeight.w500, height: 1.4),
             ),
           ),
         ],
@@ -1867,12 +2047,79 @@ class _AlertCardState extends State<AlertCard> {
   bool _blurBalcao = false;
   bool _blurAgencia = false;
 
-  /// Tenta abrir o link de emissão no navegador externo.
+  // =========================================================================
+  // 🚀 NOVAS FUNÇÕES DE QoL (Quality of Life)
+  // =========================================================================
+
+  /// Copia o texto para a área de transferência com feedback tátil e visual
+  void _copiarTexto(String texto, String label) {
+    if (texto == "N/A" || texto.isEmpty) return;
+    
+    Clipboard.setData(ClipboardData(text: texto));
+    HapticFeedback.lightImpact(); // Vibração premium
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.content_copy, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text("$label copiado!", style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          backgroundColor: AppTheme.green,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  /// Gera a mensagem de marketing e abre a gaveta nativa do celular
+  Future<void> _compartilharVoo() async {
+    final String valorAgencia = _formatarDecimal(widget.alerta.valorEmissao);
+    
+    final String texto = "✈️ *Alerta de Emissão!*\n"
+        "Encontrei essa oportunidade no radar *PramilhasVIP*:\n\n"
+        "🛫 *Trecho:* ${widget.alerta.trecho}\n"
+        "🏷️ *Programa:* ${widget.alerta.programa}\n"
+        "💰 *Custo Agência:* R\$ $valorAgencia\n"
+        "💸 *Milhas:* ${widget.alerta.milhas}\n\n"
+        "👉 _Quer receber alertas VIPs? Acesse:_ pramilhasweb.suportvip.com";
+
+    try {
+      await Share.share(texto);
+    } catch (e) {
+      // 🚀 SE O NAVEGADOR WEB NÃO SUPORTAR O COMPARTILHAMENTO, COPIA O TEXTO!
+      _copiarTexto(texto, "Mensagem Promocional");
+    }
+  }
+
+  /// 🚀 NOVO: Copia a mensagem completa (marketing) com 1 clique
+  void _copiarVooCompleto() {
+    final String valorAgencia = _formatarDecimal(widget.alerta.valorEmissao);
+    
+    final String texto = "✈️ *Alerta de Emissão!*\n"
+        "Encontrei essa oportunidade no radar *PramilhasVIP*:\n\n"
+        "🛫 *Trecho:* ${widget.alerta.trecho}\n"
+        "🏷️ *Programa:* ${widget.alerta.programa}\n"
+        "💰 *Custo Agência:* R\$ $valorAgencia\n"
+        "💸 *Milhas:* ${widget.alerta.milhas}\n\n"
+        "👉 _Quer receber alertas VIPs? Acesse:_ pramilhasweb.suportvip.com";
+
+    _copiarTexto(texto, "Oportunidade completa");
+  }
+
+  // =========================================================================
+  // FUNÇÕES DE AÇÃO EXTERNA EXISTENTES
+  // =========================================================================
+
   Future<void> _abrirLink() async {
     if (widget.alerta.link == null || widget.alerta.link!.isEmpty) return;
     final Uri url = Uri.parse(widget.alerta.link!);
-    // Android 14+: externalApplication pode falhar em alguns launchers.
-    // Tenta externalApplication primeiro; cai em platformDefault como fallback.
     try {
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -1880,23 +2127,15 @@ class _AlertCardState extends State<AlertCard> {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Não foi possível abrir o link.")),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link.")));
     }
   }
 
-  /// Copia a mensagem do balcão e tenta abrir o grupo de WhatsApp.
   Future<void> _abrirBalcao() async {
     String mensagemParaCopiar = widget.alerta.mensagemBalcao;
-
     if (mensagemParaCopiar == "N/A" || mensagemParaCopiar.isEmpty) {
-      mensagemParaCopiar =
-          "👋 Olá! Gostaria de cotar a emissão do trecho: ${widget.alerta.trecho}\nCompanhia: ${widget.alerta.programa}";
+      mensagemParaCopiar = "👋 Olá! Gostaria de cotar a emissão do trecho: ${widget.alerta.trecho}\nCompanhia: ${widget.alerta.programa}";
     }
-
     await Clipboard.setData(ClipboardData(text: mensagemParaCopiar));
 
     if (mounted) {
@@ -1908,91 +2147,46 @@ class _AlertCardState extends State<AlertCard> {
         ),
       );
     }
-
     try {
       final DiscoveryConfig? config = await DiscoveryService().getConfig();
-      final String? urlGist = config?.whatsappGroupUrl;
-      final String urlFinal = (urlGist != null && urlGist.isNotEmpty)
-          ? urlGist
-          : "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
-
-      final Uri uri = Uri.parse(urlFinal);
-      await launchUrl(
-        uri,
-        mode: kIsWeb
-            ? LaunchMode.platformDefault
-            : LaunchMode.externalApplication,
-      );
+      final String urlFinal = config?.whatsappGroupUrl ?? "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
+      await launchUrl(Uri.parse(urlFinal), mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Erro ao abrir WhatsApp: $e"),
-            backgroundColor: AppTheme.red,
-          ),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao abrir WhatsApp: $e"), backgroundColor: AppTheme.red));
     }
   }
 
-  /// Tenta abrir o link de emissão com a agência.
   Future<void> _emitirComAAgencia() async {
     String urlAgencia = widget.alerta.linkAgencia;
-
-    if (urlAgencia == "N/A" || urlAgencia.isEmpty) {
-      urlAgencia = widget.alerta.link ?? "";
-    }
-
-    if (urlAgencia.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Link da Agência não disponível.")),
-        );
-      }
-      return;
-    }
-
-    final Uri url = Uri.parse(urlAgencia);
+    if (urlAgencia == "N/A" || urlAgencia.isEmpty) urlAgencia = widget.alerta.link ?? "";
+    if (urlAgencia.isEmpty) return;
 
     try {
+      final Uri url = Uri.parse(urlAgencia);
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Não foi possível abrir o link da agência."),
-          ),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link da agência.")));
     }
   }
 
-  /// Formata strings de dinheiro vindas do JS que estão com casas decimais infinitas
   String _formatarDecimal(String valorOriginal) {
-    if (valorOriginal == "N/A" ||
-        valorOriginal == "0" ||
-        valorOriginal.isEmpty) {
-      return valorOriginal;
-    }
+    if (valorOriginal == "N/A" || valorOriginal == "0" || valorOriginal.isEmpty) return valorOriginal;
     try {
-      // Pega apenas números e o ponto/vírgula
-      String limpo = valorOriginal.replaceAll(RegExp(r'[^\d.,]'), '');
-
-      // Converte vírgula pra ponto para o Dart conseguir calcular
-      limpo = limpo.replaceAll(',', '.');
-
+      String limpo = valorOriginal.replaceAll(RegExp(r'[^\d.,]'), '').replaceAll(',', '.');
       double numero = double.parse(limpo);
-
-      // Trava em 2 casas decimais e devolve a vírgula (Padrão BR)
       return numero.toStringAsFixed(2).replaceAll('.', ',');
     } catch (e) {
-      return valorOriginal; // Fallback: se não for número, devolve como chegou
+      return valorOriginal; 
     }
   }
+
+  // =========================================================================
+  // CONSTRUÇÃO DA INTERFACE (UI)
+  // =========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -2001,44 +2195,27 @@ class _AlertCardState extends State<AlertCard> {
     Color corFundo = AppTheme.card;
 
     if (prog.contains("AZUL")) {
-      corPrincipal = const Color(0xFF38BDF8);
-      corFundo = const Color(0xFF0C1927);
+      corPrincipal = const Color(0xFF38BDF8); corFundo = const Color(0xFF0C1927);
     } else if (prog.contains("LATAM")) {
-      corPrincipal = const Color(0xFFF43F5E);
-      corFundo = const Color(0xFF230D14);
+      corPrincipal = const Color(0xFFF43F5E); corFundo = const Color(0xFF230D14);
     } else if (prog.contains("SMILES")) {
-      corPrincipal = const Color(0xFFF59E0B);
-      corFundo = const Color(0xFF22160A);
+      corPrincipal = const Color(0xFFF59E0B); corFundo = const Color(0xFF22160A);
     } else if (prog.contains("TAP")) {
-      corPrincipal = const Color(0xFF2DD4BF);
-      corFundo = const Color(0xFF0A1F1C);
+      corPrincipal = const Color(0xFF2DD4BF); corFundo = const Color(0xFF0A1F1C);
     } else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
-      // Vermelho vivo da marca para o texto/ícone (contrasta bem no escuro)
-      corPrincipal = const Color(0xFFD30000);
-      // Fundo bordô quase preto (segue o padrão LATAM/Azul)
-      corFundo = const Color(0xFF1A0505);
+      corPrincipal = const Color(0xFFD30000); corFundo = const Color(0xFF1A0505);
     } else if (prog.contains("AADVANTAGE")) {
-      corPrincipal = const Color(0xFF0078D2); // Azul clássico da AA
-      corFundo = const Color(
-        0xFF0B172A,
-      ); // Azul Marinho muito escuro para contraste
+      corPrincipal = const Color(0xFF0078D2); corFundo = const Color(0xFF0B172A);
     } else if (prog.contains("GOL")) {
-      corPrincipal = const Color(0xFFFF5C00); //
-      corFundo = const Color(0xFF140800);
+      corPrincipal = const Color(0xFFFF5C00); corFundo = const Color(0xFF140800);
     } else if (prog.contains("QATAR")) {
-      corPrincipal = const Color(0xFF860232); // Cor oficial Qatar
-      corFundo = const Color(0xFF140108); // Fundo grena quase preto
+      corPrincipal = const Color(0xFF860232); corFundo = const Color(0xFF140108);
     } else {
-      corPrincipal = AppTheme.white;
-      corFundo = AppTheme.black;
+      corPrincipal = AppTheme.white; corFundo = AppTheme.black;
     }
 
     final BoxShadow blurDourado = widget.isHighlighted
-        ? const BoxShadow(
-            color: Colors.amberAccent,
-            blurRadius: 20,
-            spreadRadius: 2,
-          )
+        ? const BoxShadow(color: Colors.amberAccent, blurRadius: 20, spreadRadius: 2)
         : const BoxShadow(color: Colors.transparent);
 
     return AnimatedContainer(
@@ -2049,19 +2226,13 @@ class _AlertCardState extends State<AlertCard> {
         color: corFundo,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: widget.isHighlighted
-              ? Colors.amberAccent
-              : (_isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
+          color: widget.isHighlighted ? Colors.amberAccent : (_isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
           width: widget.isHighlighted ? 2.0 : 1.0,
         ),
         boxShadow: [
           blurDourado,
           if (_isExpanded && !widget.isHighlighted)
-            BoxShadow(
-              color: corPrincipal.withOpacity(0.1),
-              blurRadius: 10,
-              spreadRadius: 1,
-            ),
+            BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1),
         ],
       ),
       child: InkWell(
@@ -2079,8 +2250,17 @@ class _AlertCardState extends State<AlertCard> {
   }
 
   Widget _buildHeader(Color corPrincipal, String prog) {
-    final String horaFormatada =
-        "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
+    final String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
+    final Duration idadeDoAlerta = DateTime.now().difference(widget.alerta.data);
+    Color corRelogio = AppTheme.muted; 
+    
+    if (idadeDoAlerta.inMinutes < 60) {
+      corRelogio = AppTheme.green; 
+    } else if (idadeDoAlerta.inHours < 4) {
+      corRelogio = AppTheme.yellow; 
+    }
+
+    final String trechoDisplay = widget.alerta.trecho != "N/A" ? widget.alerta.trecho : "Nova Oportunidade!";
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -2088,10 +2268,7 @@ class _AlertCardState extends State<AlertCard> {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: corPrincipal.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
+            decoration: BoxDecoration(color: corPrincipal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
             child: Icon(Icons.flight_takeoff, color: corPrincipal, size: 20),
           ),
           const SizedBox(width: 12),
@@ -2099,39 +2276,23 @@ class _AlertCardState extends State<AlertCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.alerta.trecho != "N/A"
-                      ? widget.alerta.trecho
-                      : "Nova Oportunidade!",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Colors.white,
+                // 🚀 UX: Long Press no Trecho para Copiar
+                GestureDetector(
+                  onTap: () => _copiarTexto(trechoDisplay, "Trecho"),
+                  onLongPress: () => _copiarTexto(trechoDisplay, "Trecho"),
+                  child: Text(
+                    trechoDisplay,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(
-                      prog,
-                      style: TextStyle(
-                        color: corPrincipal,
-                        fontSize: 13.2,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
-                    ),
+                    Text(prog, style: TextStyle(color: corPrincipal, fontSize: 13.2, fontWeight: FontWeight.bold, letterSpacing: 1)),
                     const Text(" • ", style: TextStyle(color: AppTheme.muted)),
-                    Text(
-                      "${widget.alerta.milhas} milhas",
-                      style: const TextStyle(
-                        color: AppTheme.text,
-                        fontSize: 12.2,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
+                    Text("${widget.alerta.milhas} milhas", style: const TextStyle(color: AppTheme.text, fontSize: 12.2, fontWeight: FontWeight.w400)),
                   ],
                 ),
               ],
@@ -2140,18 +2301,16 @@ class _AlertCardState extends State<AlertCard> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                horaFormatada,
-                style: const TextStyle(color: AppTheme.muted, fontSize: 11),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule, color: corRelogio, size: 10),
+                  const SizedBox(width: 4),
+                  Text(horaFormatada, style: TextStyle(color: corRelogio, fontSize: 11, fontWeight: FontWeight.bold)),
+                ],
               ),
               const SizedBox(height: 4),
-              Icon(
-                _isExpanded
-                    ? Icons.keyboard_arrow_up
-                    : Icons.keyboard_arrow_down,
-                color: AppTheme.muted,
-                size: 20,
-              ),
+              Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppTheme.muted, size: 20),
             ],
           ),
         ],
@@ -2159,13 +2318,59 @@ class _AlertCardState extends State<AlertCard> {
     );
   }
 
-  Widget _buildDetails(Color corPrincipal) {
+Widget _buildDetails(Color corPrincipal) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Divider(color: AppTheme.border, height: 20),
+          // 🚀 UX: Header dos detalhes com os botões de Copiar e Compartilhar
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("INFORMAÇÕES DO VOO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 🚀 NOVO BOTÃO: COPIAR TUDO
+                  InkWell(
+                    onTap: _copiarVooCompleto,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.copy, size: 14, color: corPrincipal),
+                          const SizedBox(width: 4),
+                          Text("COPIAR", style: TextStyle(color: corPrincipal, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // BOTÃO EXISTENTE: COMPARTILHAR
+                  InkWell(
+                    onTap: _compartilharVoo,
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.ios_share_rounded, size: 14, color: corPrincipal),
+                          const SizedBox(width: 4),
+                          Text("COMPARTILHAR", style: TextStyle(color: corPrincipal, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           _buildInfoGrid(corPrincipal),
           const SizedBox(height: 12),
           _buildDescriptionBox(),
@@ -2183,43 +2388,17 @@ class _AlertCardState extends State<AlertCard> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // IDA e VOLTA sem hover — só texto estático
           _buildInfoColumn("IDA", widget.alerta.dataIda),
           _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
-          // 3 valores com zoom + crossfade de taxas
-          _buildValueWithToast(
-            "FABRICADO",
-            widget.alerta.valorFabricado,
-            corPrincipal,
-            _blurCusto,
-            (bool v) => setState(() => _blurCusto = v),
-          ),
-          _buildValueWithToast(
-            "BALCÃO",
-            widget.alerta.valorBalcao,
-            AppTheme.esmerald,
-            _blurBalcao,
-            (bool v) => setState(() => _blurBalcao = v),
-          ),
-          _buildValueWithToast(
-            "AGÊNCIA",
-            widget.alerta.valorEmissao,
-            AppTheme.golden,
-            _blurAgencia,
-            (bool v) => setState(() => _blurAgencia = v),
-          ),
+          _buildValueWithToast("FABRICADO", widget.alerta.valorFabricado, corPrincipal, _blurCusto, (bool v) => setState(() => _blurCusto = v)),
+          _buildValueWithToast("BALCÃO", widget.alerta.valorBalcao, AppTheme.esmerald, _blurBalcao, (bool v) => setState(() => _blurBalcao = v)),
+          _buildValueWithToast("AGÊNCIA", widget.alerta.valorEmissao, AppTheme.golden, _blurAgencia, (bool v) => setState(() => _blurAgencia = v)),
         ],
       ),
     );
   }
 
-  Widget _buildValueWithToast(
-    String label,
-    String value,
-    Color color,
-    bool isFocused,
-    Function(bool) onFocusChanged,
-  ) {
+Widget _buildValueWithToast(String label, String value, Color color, bool isFocused, Function(bool) onFocusChanged) {
     return MouseRegion(
       onEnter: (_) => onFocusChanged(true),
       onExit: (_) => onFocusChanged(false),
@@ -2227,49 +2406,27 @@ class _AlertCardState extends State<AlertCard> {
         onTapDown: (_) => onFocusChanged(true),
         onTapUp: (_) => onFocusChanged(false),
         onTapCancel: () => onFocusChanged(false),
+        onLongPress: () => _copiarTexto(value, label),
+        onTap: () => _copiarTexto(value, label), 
         child: Padding(
-          // Mantém o mesmo alinhamento das colunas IDA e VOLTA
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Label fixo (Ex: FABRICADO)
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 10,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              // 🚀 UX: Sem o ícone de cópia para não poluir
+              Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-
-              // 🚀 O zoom puro direto nos números, sem "caixa" em volta
               SizedBox(
-                height: 28, // Altura fixa pra não empurrar o layout pra baixo
+                height: 28, 
                 child: AnimatedScale(
-                  scale: isFocused ? 1.08 : 1.0, // Retornei o zoom para 1.15
-                  alignment:
-                      Alignment.centerLeft, // Cresce da esquerda pra direita
+                  scale: isFocused ? 1.08 : 1.0, 
+                  alignment: Alignment.centerLeft, 
                   duration: const Duration(milliseconds: 200),
-                  curve:
-                      Curves.easeOutBack, // Dá um micro "pulo" suave no final
+                  curve: Curves.easeOutBack, 
                   child: Padding(
-                    // 🚀 FALTAVA O "child:" BEM AQUI!
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 2,
-                      vertical: 6,
-                    ),
-                    child: Text(
-                      value,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+                    child: Text(value, style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
@@ -2280,27 +2437,41 @@ class _AlertCardState extends State<AlertCard> {
     );
   }
 
+Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
+    final Color corExibicao = corValor ?? Colors.white;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          InkWell(
+            onTap: () => _copiarTexto(valor, titulo),
+            onLongPress: () => _copiarTexto(valor, titulo), // 🚀 Adicionado Long Press também
+            borderRadius: BorderRadius.circular(4),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12, top: 2, bottom: 2),
+              // 🚀 UX: Sem o ícone de cópia
+              child: Text(valor, style: TextStyle(color: corExibicao, fontSize: 11.5, fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDescriptionBox() {
     return Container(
       height: 175,
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white10),
-      ),
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white10)),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: SelectableText(
-          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A")
-              ? widget.alerta.detalhes
-              : widget.alerta.mensagem,
-          style: const TextStyle(
-            color: AppTheme.text,
-            fontSize: 11,
-            height: 1.4,
-          ),
+          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A") ? widget.alerta.detalhes : widget.alerta.mensagem,
+          style: const TextStyle(color: AppTheme.text, fontSize: 11, height: 1.4),
         ),
       ),
     );
@@ -2312,70 +2483,26 @@ class _AlertCardState extends State<AlertCard> {
         if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _buildActionButton(
-              "EMITIR COM MILHAS PRÓPRIAS",
-              Icons.open_in_browser,
-              corPrincipal,
-              _abrirLink,
-              showTax: true,
-              // 🚀 LIGAÇÃO 1: Foca no FABRICADO
-              onHoverChanged: (bool val) => setState(() => _blurCusto = val),
-            ),
+            child: _buildActionButton("EMITIR COM MILHAS PRÓPRIAS", Icons.open_in_browser, corPrincipal, _abrirLink, showTax: true, onHoverChanged: (bool val) => setState(() => _blurCusto = val)),
           ),
-        _buildActionButton(
-          "EMITIR NO BALCÃO",
-          Icons.local_atm_rounded,
-          AppTheme.esmerald,
-          _abrirBalcao,
-          showTax: true,
-          // 🚀 LIGAÇÃO 2: Foca no BALCÃO
-          onHoverChanged: (bool val) => setState(() => _blurBalcao = val),
-        ),
+        _buildActionButton("EMITIR NO BALCÃO", Icons.local_atm_rounded, AppTheme.esmerald, _abrirBalcao, showTax: true, onHoverChanged: (bool val) => setState(() => _blurBalcao = val)),
         const SizedBox(height: 8),
-        _buildActionButton(
-          "EMITIR COM FÃMILHASVIP",
-          Icons.verified_user_rounded,
-          AppTheme.golden,
-          _emitirComAAgencia,
-          textColor: AppTheme.surface,
-          shadowColor: AppTheme.amber,
-          showTax: true,
-          // 🚀 LIGAÇÃO 3: Foca na AGÊNCIA
-          onHoverChanged: (bool val) => setState(() => _blurAgencia = val),
-        ),
+        _buildActionButton("EMITIR COM FÃMILHASVIP", Icons.verified_user_rounded, AppTheme.golden, _emitirComAAgencia, textColor: AppTheme.surface, shadowColor: AppTheme.amber, showTax: true, onHoverChanged: (bool val) => setState(() => _blurAgencia = val)),
       ],
     );
   }
 
-  Widget _buildActionButton(
-    String label,
-    IconData icon,
-    Color color,
-    VoidCallback onPressed, {
-    Color? textColor,
-    Color? shadowColor,
-    bool showTax = false,
-    ValueChanged<bool>? onHoverChanged, // 🚀 NOVO: Recebendo o Callback
-  }) {
-    final bool taxaExiste =
-        widget.alerta.taxas != 'N/A' &&
-        widget.alerta.taxas != '0' &&
-        widget.alerta.taxas.isNotEmpty;
+  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onPressed, {Color? textColor, Color? shadowColor, bool showTax = false, ValueChanged<bool>? onHoverChanged}) {
+    final bool taxaExiste = widget.alerta.taxas != 'N/A' && widget.alerta.taxas != '0' && widget.alerta.taxas.isNotEmpty;
     final Color taxColor = taxaExiste ? color : Colors.redAccent;
-    final String taxLabel = taxaExiste
-        ? "Taxas de R\$ ${_formatarDecimal(widget.alerta.taxas)} inclusas"
-        : 'Taxas aeroportuárias não inclusas';
-    final IconData taxIcon = taxaExiste
-        ? Icons.check_circle_outline
-        : Icons.info_outline;
+    final String taxLabel = taxaExiste ? "Taxas de R\$ ${_formatarDecimal(widget.alerta.taxas)} inclusas" : 'Taxas aeroportuárias não inclusas';
+    final IconData taxIcon = taxaExiste ? Icons.check_circle_outline : Icons.info_outline;
 
     return _HoverButton(
-      onHoverChanged:
-          onHoverChanged, // 🚀 NOVO: Passando o Callback para comunicação
+      onHoverChanged: onHoverChanged,
       builder: (bool hovered) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Toast desliza de cima para baixo com AnimatedSize
           if (showTax)
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
@@ -2388,32 +2515,14 @@ class _AlertCardState extends State<AlertCard> {
                         opacity: hovered ? 1.0 : 0.0,
                         child: Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 6,
-                            horizontal: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: taxColor.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(
-                              color: taxColor.withOpacity(0.35),
-                              width: 0.8,
-                            ),
-                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                          decoration: BoxDecoration(color: taxColor.withOpacity(0.12), borderRadius: BorderRadius.circular(7), border: Border.all(color: taxColor.withOpacity(0.35), width: 0.8)),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(taxIcon, size: 13, color: taxColor),
                               const SizedBox(width: 6),
-                              Text(
-                                taxLabel,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: taxColor,
-                                  letterSpacing: 0.2,
-                                ),
-                              ),
+                              Text(taxLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: taxColor, letterSpacing: 0.2)),
                             ],
                           ),
                         ),
@@ -2421,67 +2530,14 @@ class _AlertCardState extends State<AlertCard> {
                     )
                   : const SizedBox.shrink(),
             ),
-          // Botão principal
           SizedBox(
             width: double.infinity,
             height: 45,
             child: ElevatedButton.icon(
               onPressed: onPressed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: color,
-                foregroundColor: textColor ?? Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: hovered ? 6 : 4,
-                shadowColor: (shadowColor ?? color).withOpacity(0.4),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: textColor ?? Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), elevation: hovered ? 6 : 4, shadowColor: (shadowColor ?? color).withOpacity(0.4)),
               icon: Icon(icon, size: 18),
-              label: Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
-    final Color corExibicao = corValor ?? Colors.white;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            titulo,
-            style: const TextStyle(
-              color: AppTheme.muted,
-              fontSize: 10,
-              letterSpacing: 1,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(
-              right: 12,
-              top: 5.4,
-            ), // para evitar que textos longos encostem no próximo item
-            child: Text(
-              valor,
-              style: TextStyle(
-                color: corExibicao,
-                fontSize: 11.5,
-                fontWeight: corValor != null
-                    ? FontWeight.w900
-                    : FontWeight.w700,
-              ),
+              label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
             ),
           ),
         ],
