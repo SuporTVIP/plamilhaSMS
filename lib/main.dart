@@ -687,10 +687,12 @@ class _MainNavigatorState extends State<MainNavigator>
   DateTime? _ultimoToqueSiren;
   final int _cooldownSegundos = 15;
 
-  final List<Widget> _screens = const [
-    AlertsScreen(),
-    LicenseScreen(),
-    SmsScreen(),
+  // 🚀 NOVO: O Controlador que vai fazer a tela subir
+  final ScrollController _alertScrollController = ScrollController();
+  late final List<Widget> _screens = [
+    AlertsScreen(scrollController: _alertScrollController),
+    const LicenseScreen(),
+    const SmsScreen(),
   ];
 
   Future<void> _verificarOtimizacaoBateria() async {
@@ -1079,7 +1081,20 @@ class _MainNavigatorState extends State<MainNavigator>
         selectedItemColor: AppTheme.accent,
         unselectedItemColor: AppTheme.muted,
         currentIndex: _currentIndex,
-        onTap: (int index) => setState(() => _currentIndex = index),
+        onTap: (int index) {
+          // 🚀 UX: Lógica do "Double Tap" para Voltar ao Topo
+          if (_currentIndex == 0 && index == 0) {
+            if (_alertScrollController.hasClients) {
+              _alertScrollController.animateTo(
+                0, // 0 é o topo exato da tela
+                duration: const Duration(milliseconds: 600),
+                curve: Curves
+                    .easeOutCubic, // Animação super macia e desacelerada no final
+              );
+            }
+          }
+          setState(() => _currentIndex = index);
+        },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.flight_takeoff),
@@ -1095,8 +1110,10 @@ class _MainNavigatorState extends State<MainNavigator>
 
 /// Exibe a lista de oportunidades de milhas em tempo real.
 class AlertsScreen extends StatefulWidget {
-  /// Construtor padrão para [AlertsScreen].
-  const AlertsScreen({super.key});
+  final ScrollController?
+  scrollController; // 🚀 Controlador para o "Voltar ao Topo"
+
+  const AlertsScreen({super.key, this.scrollController});
 
   @override
   State<AlertsScreen> createState() => _AlertsScreenState();
@@ -1521,7 +1538,7 @@ class _AlertsScreenState extends State<AlertsScreen>
       if (kIsWeb) {
         // 🌐 NA WEB: Força a busca HTTP imediata para não ter buracos!
         debugPrint('🌐 [WEB] Aba focada! Forçando PULL do servidor...');
-        _alertService.forceSync(silencioso: true).then((_) {
+        _alertService.carregarDoCache().then((_) {
           _verificarPendenciasDouradas();
         });
       } else {
@@ -1548,7 +1565,7 @@ class _AlertsScreenState extends State<AlertsScreen>
     }
   }
 
-// =========================================================================
+  // =========================================================================
   // 🚀 NOVOS HELPERS DE FILTRO (AGORA NO LUGAR CERTO)
   // =========================================================================
 
@@ -1588,7 +1605,7 @@ class _AlertsScreenState extends State<AlertsScreen>
 
   void _limparTodosFiltros() async {
     setState(() {
-      _filtros = UserFilters(); 
+      _filtros = UserFilters();
       _aplicarFiltrosNaTela();
       _rebuildIndex();
     });
@@ -1727,7 +1744,9 @@ class _AlertsScreenState extends State<AlertsScreen>
 
         if (_needsWebAudioInteraction) {
           return btn
-              .animate(onPlay: (AnimationController controller) => controller.repeat())
+              .animate(
+                onPlay: (AnimationController controller) => controller.repeat(),
+              )
               .shake(hz: 4, curve: Curves.easeInOut, duration: 600.ms)
               .then(delay: 1500.ms);
         }
@@ -1752,7 +1771,10 @@ class _AlertsScreenState extends State<AlertsScreen>
 
     final List<Widget> chips = [];
 
-    if (!_filtros.azulAtivo || !_filtros.latamAtivo || !_filtros.smilesAtivo || !_filtros.outrosAtivo) {
+    if (!_filtros.azulAtivo ||
+        !_filtros.latamAtivo ||
+        !_filtros.smilesAtivo ||
+        !_filtros.outrosAtivo) {
       final List<String> ativas = [];
       if (_filtros.azulAtivo) ativas.add("Azul");
       if (_filtros.latamAtivo) ativas.add("Latam");
@@ -1764,13 +1786,17 @@ class _AlertsScreenState extends State<AlertsScreen>
     }
 
     for (String origem in _filtros.origens) {
-      final sigla = origem.split(' - ').first; 
-      chips.add(_buildMiniChip("🛫 $sigla", () => _removerFiltroLocal(true, origem)));
+      final sigla = origem.split(' - ').first;
+      chips.add(
+        _buildMiniChip("🛫 $sigla", () => _removerFiltroLocal(true, origem)),
+      );
     }
 
     for (String destino in _filtros.destinos) {
       final sigla = destino.split(' - ').first;
-      chips.add(_buildMiniChip("🛬 $sigla", () => _removerFiltroLocal(false, destino)));
+      chips.add(
+        _buildMiniChip("🛬 $sigla", () => _removerFiltroLocal(false, destino)),
+      );
     }
 
     return Container(
@@ -1798,7 +1824,14 @@ class _AlertsScreenState extends State<AlertsScreen>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.text, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(width: 4),
           InkWell(
             onTap: onDeleted,
@@ -1807,7 +1840,7 @@ class _AlertsScreenState extends State<AlertsScreen>
               padding: EdgeInsets.all(4.0),
               child: Icon(Icons.close, size: 14, color: AppTheme.accent),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -1821,20 +1854,38 @@ class _AlertsScreenState extends State<AlertsScreen>
           children: [
             const Icon(Icons.filter_alt_off, size: 64, color: AppTheme.yellow),
             const SizedBox(height: 16),
-            const Text('Nenhuma emissão atende aos seus filtros.', style: TextStyle(color: AppTheme.text, fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text(
+              'Nenhuma emissão atende aos seus filtros.',
+              style: TextStyle(
+                color: AppTheme.text,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 8),
-            const Text('Tente remover algumas restrições.', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+            const Text(
+              'Tente remover algumas restrições.',
+              style: TextStyle(color: AppTheme.muted, fontSize: 13),
+            ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.red.withOpacity(0.1),
                 foregroundColor: AppTheme.red,
                 side: const BorderSide(color: AppTheme.red),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               icon: const Icon(Icons.delete_sweep),
-              label: const Text("LIMPAR TODOS OS FILTROS", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+              label: const Text(
+                "LIMPAR TODOS OS FILTROS",
+                style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
+              ),
               onPressed: _limparTodosFiltros,
             ),
           ],
@@ -1848,9 +1899,19 @@ class _AlertsScreenState extends State<AlertsScreen>
         children: [
           const Icon(Icons.flight, size: 64, color: AppTheme.border),
           const SizedBox(height: 16),
-          const Text('Nenhuma emissão no momento.', style: TextStyle(color: AppTheme.text, fontSize: 16, fontWeight: FontWeight.bold)),
+          const Text(
+            'Nenhuma emissão no momento.',
+            style: TextStyle(
+              color: AppTheme.text,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 8),
-          const Text('Aguarde, o radar VIP capturará logo mais.', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+          const Text(
+            'Aguarde, o radar VIP capturará logo mais.',
+            style: TextStyle(color: AppTheme.muted, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -1858,50 +1919,62 @@ class _AlertsScreenState extends State<AlertsScreen>
 
   Widget _buildSkeletonLoading() {
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: 6, 
-      itemBuilder: (context, index) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          height: 90, 
-          decoration: BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.all(16),
+          itemCount: 6,
+          itemBuilder: (context, index) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              height: 90,
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 180,
+                            height: 14,
+                            color: AppTheme.surface,
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            width: 100,
+                            height: 12,
+                            color: AppTheme.surface,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(width: 180, height: 14, color: AppTheme.surface),
-                      const SizedBox(height: 8),
-                      Container(width: 100, height: 12, color: AppTheme.surface),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    )
-    .animate(onPlay: (controller) => controller.repeat())
-    .shimmer(duration: 1200.ms, color: Colors.white12);
+              ),
+            );
+          },
+        )
+        .animate(onPlay: (controller) => controller.repeat())
+        .shimmer(duration: 1200.ms, color: Colors.white12);
   }
 
   Widget _buildBody() {
     if (_isCarregando) {
-      return _buildSkeletonLoading(); 
+      return _buildSkeletonLoading();
     }
 
     final List<Widget> banners = [
@@ -1910,7 +1983,10 @@ class _AlertsScreenState extends State<AlertsScreen>
     ];
 
     Widget mainContent = CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      controller: widget.scrollController, // 🚀 O Cérebro do scroll conectado!
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
       slivers: [
         if (banners.isNotEmpty)
           SliverToBoxAdapter(
@@ -1919,20 +1995,23 @@ class _AlertsScreenState extends State<AlertsScreen>
               child: Column(children: banners),
             ),
           ),
-          
+
         if (_listaAlertasFiltrados.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: _buildSmartEmptyState(), 
+              child: _buildSmartEmptyState(),
             ),
           )
         else
           SliverPadding(
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((BuildContext context, int index) {
+              delegate: SliverChildBuilderDelegate((
+                BuildContext context,
+                int index,
+              ) {
                 final Alert alerta = _listaAlertasFiltrados[index];
                 final String trechoNorm = _normalizar(alerta.trecho);
                 final String idNorm = _normalizar(alerta.id);
@@ -1940,7 +2019,7 @@ class _AlertsScreenState extends State<AlertsScreen>
                     _highlightedTrecho != null &&
                     (trechoNorm.contains(_highlightedTrecho!) ||
                         idNorm.contains(_highlightedTrecho!));
-                
+
                 return AlertCard(
                   key: ValueKey(alerta.id),
                   alerta: alerta,
@@ -1954,9 +2033,9 @@ class _AlertsScreenState extends State<AlertsScreen>
 
     return Column(
       children: [
-        _buildActiveFiltersRow(), 
+        _buildActiveFiltersRow(),
         Expanded(
-          child: RefreshIndicator( 
+          child: RefreshIndicator(
             color: AppTheme.accent,
             backgroundColor: AppTheme.surface,
             onRefresh: () async {
@@ -1983,12 +2062,20 @@ class _AlertsScreenState extends State<AlertsScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.build_circle_outlined, color: AppTheme.yellow, size: 20),
+          const Icon(
+            Icons.build_circle_outlined,
+            color: AppTheme.yellow,
+            size: 20,
+          ),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
               'Sistema em manutenção. Algumas funcionalidades podem estar limitadas.',
-              style: TextStyle(color: AppTheme.yellow, fontSize: 12, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: AppTheme.yellow,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -2013,7 +2100,12 @@ class _AlertsScreenState extends State<AlertsScreen>
           Expanded(
             child: Text(
               _announcement,
-              style: const TextStyle(color: AppTheme.text, fontSize: 12, fontWeight: FontWeight.w500, height: 1.4),
+              style: const TextStyle(
+                color: AppTheme.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -2054,10 +2146,10 @@ class _AlertCardState extends State<AlertCard> {
   /// Copia o texto para a área de transferência com feedback tátil e visual
   void _copiarTexto(String texto, String label) {
     if (texto == "N/A" || texto.isEmpty) return;
-    
+
     Clipboard.setData(ClipboardData(text: texto));
     HapticFeedback.lightImpact(); // Vibração premium
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2066,13 +2158,18 @@ class _AlertCardState extends State<AlertCard> {
             children: [
               const Icon(Icons.content_copy, color: Colors.white, size: 18),
               const SizedBox(width: 8),
-              Text("$label copiado!", style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                "$label copiado!",
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           backgroundColor: AppTheme.green,
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -2081,8 +2178,9 @@ class _AlertCardState extends State<AlertCard> {
   /// Gera a mensagem de marketing e abre a gaveta nativa do celular
   Future<void> _compartilharVoo() async {
     final String valorAgencia = _formatarDecimal(widget.alerta.valorEmissao);
-    
-    final String texto = "✈️ *Alerta de Emissão!*\n"
+
+    final String texto =
+        "✈️ *Alerta de Emissão!*\n"
         "Encontrei essa oportunidade no radar *PramilhasVIP*:\n\n"
         "🛫 *Trecho:* ${widget.alerta.trecho}\n"
         "🏷️ *Programa:* ${widget.alerta.programa}\n"
@@ -2101,8 +2199,9 @@ class _AlertCardState extends State<AlertCard> {
   /// 🚀 NOVO: Copia a mensagem completa (marketing) com 1 clique
   void _copiarVooCompleto() {
     final String valorAgencia = _formatarDecimal(widget.alerta.valorEmissao);
-    
-    final String texto = "✈️ *Alerta de Emissão!*\n"
+
+    final String texto =
+        "✈️ *Alerta de Emissão!*\n"
         "Encontrei essa oportunidade no radar *PramilhasVIP*:\n\n"
         "🛫 *Trecho:* ${widget.alerta.trecho}\n"
         "🏷️ *Programa:* ${widget.alerta.programa}\n"
@@ -2127,14 +2226,18 @@ class _AlertCardState extends State<AlertCard> {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link.")));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Não foi possível abrir o link.")),
+        );
     }
   }
 
   Future<void> _abrirBalcao() async {
     String mensagemParaCopiar = widget.alerta.mensagemBalcao;
     if (mensagemParaCopiar == "N/A" || mensagemParaCopiar.isEmpty) {
-      mensagemParaCopiar = "👋 Olá! Gostaria de cotar a emissão do trecho: ${widget.alerta.trecho}\nCompanhia: ${widget.alerta.programa}";
+      mensagemParaCopiar =
+          "👋 Olá! Gostaria de cotar a emissão do trecho: ${widget.alerta.trecho}\nCompanhia: ${widget.alerta.programa}";
     }
     await Clipboard.setData(ClipboardData(text: mensagemParaCopiar));
 
@@ -2149,16 +2252,30 @@ class _AlertCardState extends State<AlertCard> {
     }
     try {
       final DiscoveryConfig? config = await DiscoveryService().getConfig();
-      final String urlFinal = config?.whatsappGroupUrl ?? "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
-      await launchUrl(Uri.parse(urlFinal), mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication);
+      final String urlFinal =
+          config?.whatsappGroupUrl ??
+          "https://chat.whatsapp.com/DMyfA6rb7jmJsvCJUVU5vk";
+      await launchUrl(
+        Uri.parse(urlFinal),
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+      );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Erro ao abrir WhatsApp: $e"), backgroundColor: AppTheme.red));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Erro ao abrir WhatsApp: $e"),
+            backgroundColor: AppTheme.red,
+          ),
+        );
     }
   }
 
   Future<void> _emitirComAAgencia() async {
     String urlAgencia = widget.alerta.linkAgencia;
-    if (urlAgencia == "N/A" || urlAgencia.isEmpty) urlAgencia = widget.alerta.link ?? "";
+    if (urlAgencia == "N/A" || urlAgencia.isEmpty)
+      urlAgencia = widget.alerta.link ?? "";
     if (urlAgencia.isEmpty) return;
 
     try {
@@ -2169,18 +2286,26 @@ class _AlertCardState extends State<AlertCard> {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Não foi possível abrir o link da agência.")));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Não foi possível abrir o link da agência."),
+          ),
+        );
     }
   }
 
   String _formatarDecimal(String valorOriginal) {
-    if (valorOriginal == "N/A" || valorOriginal == "0" || valorOriginal.isEmpty) return valorOriginal;
+    if (valorOriginal == "N/A" || valorOriginal == "0" || valorOriginal.isEmpty)
+      return valorOriginal;
     try {
-      String limpo = valorOriginal.replaceAll(RegExp(r'[^\d.,]'), '').replaceAll(',', '.');
+      String limpo = valorOriginal
+          .replaceAll(RegExp(r'[^\d.,]'), '')
+          .replaceAll(',', '.');
       double numero = double.parse(limpo);
       return numero.toStringAsFixed(2).replaceAll('.', ',');
     } catch (e) {
-      return valorOriginal; 
+      return valorOriginal;
     }
   }
 
@@ -2195,27 +2320,40 @@ class _AlertCardState extends State<AlertCard> {
     Color corFundo = AppTheme.card;
 
     if (prog.contains("AZUL")) {
-      corPrincipal = const Color(0xFF38BDF8); corFundo = const Color(0xFF0C1927);
+      corPrincipal = const Color(0xFF38BDF8);
+      corFundo = const Color(0xFF0C1927);
     } else if (prog.contains("LATAM")) {
-      corPrincipal = const Color(0xFFF43F5E); corFundo = const Color(0xFF230D14);
+      corPrincipal = const Color(0xFFF43F5E);
+      corFundo = const Color(0xFF230D14);
     } else if (prog.contains("SMILES")) {
-      corPrincipal = const Color(0xFFF59E0B); corFundo = const Color(0xFF22160A);
+      corPrincipal = const Color(0xFFF59E0B);
+      corFundo = const Color(0xFF22160A);
     } else if (prog.contains("TAP")) {
-      corPrincipal = const Color(0xFF2DD4BF); corFundo = const Color(0xFF0A1F1C);
+      corPrincipal = const Color(0xFF2DD4BF);
+      corFundo = const Color(0xFF0A1F1C);
     } else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
-      corPrincipal = const Color(0xFFD30000); corFundo = const Color(0xFF1A0505);
+      corPrincipal = const Color(0xFFD30000);
+      corFundo = const Color(0xFF1A0505);
     } else if (prog.contains("AADVANTAGE")) {
-      corPrincipal = const Color(0xFF0078D2); corFundo = const Color(0xFF0B172A);
+      corPrincipal = const Color(0xFF0078D2);
+      corFundo = const Color(0xFF0B172A);
     } else if (prog.contains("GOL")) {
-      corPrincipal = const Color(0xFFFF5C00); corFundo = const Color(0xFF140800);
+      corPrincipal = const Color(0xFFFF5C00);
+      corFundo = const Color(0xFF140800);
     } else if (prog.contains("QATAR")) {
-      corPrincipal = const Color(0xFF860232); corFundo = const Color(0xFF140108);
+      corPrincipal = const Color(0xFF860232);
+      corFundo = const Color(0xFF140108);
     } else {
-      corPrincipal = AppTheme.white; corFundo = AppTheme.black;
+      corPrincipal = AppTheme.white;
+      corFundo = AppTheme.black;
     }
 
     final BoxShadow blurDourado = widget.isHighlighted
-        ? const BoxShadow(color: Colors.amberAccent, blurRadius: 20, spreadRadius: 2)
+        ? const BoxShadow(
+            color: Colors.amberAccent,
+            blurRadius: 20,
+            spreadRadius: 2,
+          )
         : const BoxShadow(color: Colors.transparent);
 
     return AnimatedContainer(
@@ -2226,13 +2364,19 @@ class _AlertCardState extends State<AlertCard> {
         color: corFundo,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: widget.isHighlighted ? Colors.amberAccent : (_isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
+          color: widget.isHighlighted
+              ? Colors.amberAccent
+              : (_isExpanded ? corPrincipal.withOpacity(0.5) : AppTheme.border),
           width: widget.isHighlighted ? 2.0 : 1.0,
         ),
         boxShadow: [
           blurDourado,
           if (_isExpanded && !widget.isHighlighted)
-            BoxShadow(color: corPrincipal.withOpacity(0.1), blurRadius: 10, spreadRadius: 1),
+            BoxShadow(
+              color: corPrincipal.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 1,
+            ),
         ],
       ),
       child: InkWell(
@@ -2242,7 +2386,15 @@ class _AlertCardState extends State<AlertCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildHeader(corPrincipal, prog),
-            if (_isExpanded) _buildDetails(corPrincipal),
+            // 🚀 UX: O EFEITO SANFONA MÁGICO AQUI!
+            AnimatedSize(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _isExpanded
+                  ? _buildDetails(corPrincipal)
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
@@ -2250,17 +2402,22 @@ class _AlertCardState extends State<AlertCard> {
   }
 
   Widget _buildHeader(Color corPrincipal, String prog) {
-    final String horaFormatada = "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
-    final Duration idadeDoAlerta = DateTime.now().difference(widget.alerta.data);
-    Color corRelogio = AppTheme.muted; 
-    
+    final String horaFormatada =
+        "${widget.alerta.data.hour.toString().padLeft(2, '0')}:${widget.alerta.data.minute.toString().padLeft(2, '0')}";
+    final Duration idadeDoAlerta = DateTime.now().difference(
+      widget.alerta.data,
+    );
+    Color corRelogio = AppTheme.muted;
+
     if (idadeDoAlerta.inMinutes < 60) {
-      corRelogio = AppTheme.green; 
+      corRelogio = AppTheme.green;
     } else if (idadeDoAlerta.inHours < 4) {
-      corRelogio = AppTheme.yellow; 
+      corRelogio = AppTheme.yellow;
     }
 
-    final String trechoDisplay = widget.alerta.trecho != "N/A" ? widget.alerta.trecho : "Nova Oportunidade!";
+    final String trechoDisplay = widget.alerta.trecho != "N/A"
+        ? widget.alerta.trecho
+        : "Nova Oportunidade!";
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -2268,7 +2425,10 @@ class _AlertCardState extends State<AlertCard> {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: corPrincipal.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: corPrincipal.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Icon(Icons.flight_takeoff, color: corPrincipal, size: 20),
           ),
           const SizedBox(width: 12),
@@ -2282,7 +2442,11 @@ class _AlertCardState extends State<AlertCard> {
                   onLongPress: () => _copiarTexto(trechoDisplay, "Trecho"),
                   child: Text(
                     trechoDisplay,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.white),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: Colors.white,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2290,9 +2454,24 @@ class _AlertCardState extends State<AlertCard> {
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Text(prog, style: TextStyle(color: corPrincipal, fontSize: 13.2, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                    Text(
+                      prog,
+                      style: TextStyle(
+                        color: corPrincipal,
+                        fontSize: 13.2,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
                     const Text(" • ", style: TextStyle(color: AppTheme.muted)),
-                    Text("${widget.alerta.milhas} milhas", style: const TextStyle(color: AppTheme.text, fontSize: 12.2, fontWeight: FontWeight.w400)),
+                    Text(
+                      "${widget.alerta.milhas} milhas",
+                      style: const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 12.2,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -2306,11 +2485,24 @@ class _AlertCardState extends State<AlertCard> {
                 children: [
                   Icon(Icons.schedule, color: corRelogio, size: 10),
                   const SizedBox(width: 4),
-                  Text(horaFormatada, style: TextStyle(color: corRelogio, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text(
+                    horaFormatada,
+                    style: TextStyle(
+                      color: corRelogio,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
-              Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppTheme.muted, size: 20),
+              Icon(
+                _isExpanded
+                    ? Icons.keyboard_arrow_up
+                    : Icons.keyboard_arrow_down,
+                color: AppTheme.muted,
+                size: 20,
+              ),
             ],
           ),
         ],
@@ -2318,7 +2510,7 @@ class _AlertCardState extends State<AlertCard> {
     );
   }
 
-Widget _buildDetails(Color corPrincipal) {
+  Widget _buildDetails(Color corPrincipal) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       child: Column(
@@ -2329,7 +2521,15 @@ Widget _buildDetails(Color corPrincipal) {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("INFORMAÇÕES DO VOO", style: TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+              const Text(
+                "INFORMAÇÕES DO VOO",
+                style: TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  letterSpacing: 1.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -2338,13 +2538,24 @@ Widget _buildDetails(Color corPrincipal) {
                     onTap: _copiarVooCompleto,
                     borderRadius: BorderRadius.circular(20),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8.0,
+                        vertical: 4.0,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(Icons.copy, size: 14, color: corPrincipal),
                           const SizedBox(width: 4),
-                          Text("COPIAR", style: TextStyle(color: corPrincipal, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          Text(
+                            "COPIAR",
+                            style: TextStyle(
+                              color: corPrincipal,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2355,13 +2566,28 @@ Widget _buildDetails(Color corPrincipal) {
                     onTap: _compartilharVoo,
                     borderRadius: BorderRadius.circular(20),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8.0,
+                        vertical: 4.0,
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.ios_share_rounded, size: 14, color: corPrincipal),
+                          Icon(
+                            Icons.ios_share_rounded,
+                            size: 14,
+                            color: corPrincipal,
+                          ),
                           const SizedBox(width: 4),
-                          Text("COMPARTILHAR", style: TextStyle(color: corPrincipal, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                          Text(
+                            "COMPARTILHAR",
+                            style: TextStyle(
+                              color: corPrincipal,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2390,15 +2616,39 @@ Widget _buildDetails(Color corPrincipal) {
         children: [
           _buildInfoColumn("IDA", widget.alerta.dataIda),
           _buildInfoColumn("VOLTA", widget.alerta.dataVolta),
-          _buildValueWithToast("FABRICADO", widget.alerta.valorFabricado, corPrincipal, _blurCusto, (bool v) => setState(() => _blurCusto = v)),
-          _buildValueWithToast("BALCÃO", widget.alerta.valorBalcao, AppTheme.esmerald, _blurBalcao, (bool v) => setState(() => _blurBalcao = v)),
-          _buildValueWithToast("AGÊNCIA", widget.alerta.valorEmissao, AppTheme.golden, _blurAgencia, (bool v) => setState(() => _blurAgencia = v)),
+          _buildValueWithToast(
+            "FABRICADO",
+            widget.alerta.valorFabricado,
+            corPrincipal,
+            _blurCusto,
+            (bool v) => setState(() => _blurCusto = v),
+          ),
+          _buildValueWithToast(
+            "BALCÃO",
+            widget.alerta.valorBalcao,
+            AppTheme.esmerald,
+            _blurBalcao,
+            (bool v) => setState(() => _blurBalcao = v),
+          ),
+          _buildValueWithToast(
+            "AGÊNCIA",
+            widget.alerta.valorEmissao,
+            AppTheme.golden,
+            _blurAgencia,
+            (bool v) => setState(() => _blurAgencia = v),
+          ),
         ],
       ),
     );
   }
 
-Widget _buildValueWithToast(String label, String value, Color color, bool isFocused, Function(bool) onFocusChanged) {
+  Widget _buildValueWithToast(
+    String label,
+    String value,
+    Color color,
+    bool isFocused,
+    Function(bool) onFocusChanged,
+  ) {
     return MouseRegion(
       onEnter: (_) => onFocusChanged(true),
       onExit: (_) => onFocusChanged(false),
@@ -2407,7 +2657,7 @@ Widget _buildValueWithToast(String label, String value, Color color, bool isFocu
         onTapUp: (_) => onFocusChanged(false),
         onTapCancel: () => onFocusChanged(false),
         onLongPress: () => _copiarTexto(value, label),
-        onTap: () => _copiarTexto(value, label), 
+        onTap: () => _copiarTexto(value, label),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
@@ -2415,18 +2665,36 @@ Widget _buildValueWithToast(String label, String value, Color color, bool isFocu
             mainAxisSize: MainAxisSize.min,
             children: [
               // 🚀 UX: Sem o ícone de cópia para não poluir
-              Text(label, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 10,
+                  letterSpacing: 1,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               const SizedBox(height: 4),
               SizedBox(
-                height: 28, 
+                height: 28,
                 child: AnimatedScale(
-                  scale: isFocused ? 1.08 : 1.0, 
-                  alignment: Alignment.centerLeft, 
+                  scale: isFocused ? 1.08 : 1.0,
+                  alignment: Alignment.centerLeft,
                   duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutBack, 
+                  curve: Curves.easeOutBack,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-                    child: Text(value, style: TextStyle(color: color, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 6,
+                    ),
+                    child: Text(
+                      value,
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -2437,23 +2705,41 @@ Widget _buildValueWithToast(String label, String value, Color color, bool isFocu
     );
   }
 
-Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
+  Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
     final Color corExibicao = corValor ?? Colors.white;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(titulo, style: const TextStyle(color: AppTheme.muted, fontSize: 10, letterSpacing: 1, fontWeight: FontWeight.w600)),
+          Text(
+            titulo,
+            style: const TextStyle(
+              color: AppTheme.muted,
+              fontSize: 10,
+              letterSpacing: 1,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 4),
           InkWell(
             onTap: () => _copiarTexto(valor, titulo),
-            onLongPress: () => _copiarTexto(valor, titulo), // 🚀 Adicionado Long Press também
+            onLongPress: () =>
+                _copiarTexto(valor, titulo), // 🚀 Adicionado Long Press também
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.only(right: 12, top: 2, bottom: 2),
               // 🚀 UX: Sem o ícone de cópia
-              child: Text(valor, style: TextStyle(color: corExibicao, fontSize: 11.5, fontWeight: corValor != null ? FontWeight.w900 : FontWeight.w700)),
+              child: Text(
+                valor,
+                style: TextStyle(
+                  color: corExibicao,
+                  fontSize: 11.5,
+                  fontWeight: corValor != null
+                      ? FontWeight.w900
+                      : FontWeight.w700,
+                ),
+              ),
             ),
           ),
         ],
@@ -2466,12 +2752,22 @@ Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
       height: 175,
       width: double.infinity,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white10)),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white10),
+      ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: SelectableText(
-          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A") ? widget.alerta.detalhes : widget.alerta.mensagem,
-          style: const TextStyle(color: AppTheme.text, fontSize: 11, height: 1.4),
+          (widget.alerta.detalhes.isNotEmpty && widget.alerta.detalhes != "N/A")
+              ? widget.alerta.detalhes
+              : widget.alerta.mensagem,
+          style: const TextStyle(
+            color: AppTheme.text,
+            fontSize: 11,
+            height: 1.4,
+          ),
         ),
       ),
     );
@@ -2483,20 +2779,59 @@ Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
         if (widget.alerta.link != null && widget.alerta.link!.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _buildActionButton("EMITIR COM MILHAS PRÓPRIAS", Icons.open_in_browser, corPrincipal, _abrirLink, showTax: true, onHoverChanged: (bool val) => setState(() => _blurCusto = val)),
+            child: _buildActionButton(
+              "EMITIR COM MILHAS PRÓPRIAS",
+              Icons.open_in_browser,
+              corPrincipal,
+              _abrirLink,
+              showTax: true,
+              onHoverChanged: (bool val) => setState(() => _blurCusto = val),
+            ),
           ),
-        _buildActionButton("EMITIR NO BALCÃO", Icons.local_atm_rounded, AppTheme.esmerald, _abrirBalcao, showTax: true, onHoverChanged: (bool val) => setState(() => _blurBalcao = val)),
+        _buildActionButton(
+          "EMITIR NO BALCÃO",
+          Icons.local_atm_rounded,
+          AppTheme.esmerald,
+          _abrirBalcao,
+          showTax: true,
+          onHoverChanged: (bool val) => setState(() => _blurBalcao = val),
+        ),
         const SizedBox(height: 8),
-        _buildActionButton("EMITIR COM FÃMILHASVIP", Icons.verified_user_rounded, AppTheme.golden, _emitirComAAgencia, textColor: AppTheme.surface, shadowColor: AppTheme.amber, showTax: true, onHoverChanged: (bool val) => setState(() => _blurAgencia = val)),
+        _buildActionButton(
+          "EMITIR COM FÃMILHASVIP",
+          Icons.verified_user_rounded,
+          AppTheme.golden,
+          _emitirComAAgencia,
+          textColor: AppTheme.surface,
+          shadowColor: AppTheme.amber,
+          showTax: true,
+          onHoverChanged: (bool val) => setState(() => _blurAgencia = val),
+        ),
       ],
     );
   }
 
-  Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onPressed, {Color? textColor, Color? shadowColor, bool showTax = false, ValueChanged<bool>? onHoverChanged}) {
-    final bool taxaExiste = widget.alerta.taxas != 'N/A' && widget.alerta.taxas != '0' && widget.alerta.taxas.isNotEmpty;
+  Widget _buildActionButton(
+    String label,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed, {
+    Color? textColor,
+    Color? shadowColor,
+    bool showTax = false,
+    ValueChanged<bool>? onHoverChanged,
+  }) {
+    final bool taxaExiste =
+        widget.alerta.taxas != 'N/A' &&
+        widget.alerta.taxas != '0' &&
+        widget.alerta.taxas.isNotEmpty;
     final Color taxColor = taxaExiste ? color : Colors.redAccent;
-    final String taxLabel = taxaExiste ? "Taxas de R\$ ${_formatarDecimal(widget.alerta.taxas)} inclusas" : 'Taxas aeroportuárias não inclusas';
-    final IconData taxIcon = taxaExiste ? Icons.check_circle_outline : Icons.info_outline;
+    final String taxLabel = taxaExiste
+        ? "Taxas de R\$ ${_formatarDecimal(widget.alerta.taxas)} inclusas"
+        : 'Taxas aeroportuárias não inclusas';
+    final IconData taxIcon = taxaExiste
+        ? Icons.check_circle_outline
+        : Icons.info_outline;
 
     return _HoverButton(
       onHoverChanged: onHoverChanged,
@@ -2515,14 +2850,32 @@ Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
                         opacity: hovered ? 1.0 : 0.0,
                         child: Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-                          decoration: BoxDecoration(color: taxColor.withOpacity(0.12), borderRadius: BorderRadius.circular(7), border: Border.all(color: taxColor.withOpacity(0.35), width: 0.8)),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: taxColor.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(
+                              color: taxColor.withOpacity(0.35),
+                              width: 0.8,
+                            ),
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(taxIcon, size: 13, color: taxColor),
                               const SizedBox(width: 6),
-                              Text(taxLabel, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: taxColor, letterSpacing: 0.2)),
+                              Text(
+                                taxLabel,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: taxColor,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -2535,9 +2888,23 @@ Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
             height: 45,
             child: ElevatedButton.icon(
               onPressed: onPressed,
-              style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: textColor ?? Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), elevation: hovered ? 6 : 4, shadowColor: (shadowColor ?? color).withOpacity(0.4)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: textColor ?? Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: hovered ? 6 : 4,
+                shadowColor: (shadowColor ?? color).withOpacity(0.4),
+              ),
               icon: Icon(icon, size: 18),
-              label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                ),
+              ),
             ),
           ),
         ],
@@ -2694,6 +3061,80 @@ class _SmsScreenState extends State<SmsScreen> {
           ).showSnackBar(SnackBar(content: Text("Erro nativo: $e")));
       }
     }
+  }
+
+  // 🚀 NOVO: Formata o tempo "fixo" do Android para tempo relativo "Há X min"
+  String _formatarTempoSms(String? dataSms) {
+    if (dataSms == null || dataSms.isEmpty) return "";
+    try {
+      final agora = DateTime.now();
+      final partes = dataSms.split(' '); // Separa "23/03" de "14:30"
+      if (partes.length < 2) return dataSms;
+
+      final dataPartes = partes[0].split('/');
+      final horaPartes = partes[1].split(':');
+
+      // Monta o objeto DateTime assumindo o ano atual
+      final DateTime dtSms = DateTime(
+        agora.year,
+        int.parse(dataPartes[1]),
+        int.parse(dataPartes[0]),
+        int.parse(horaPartes[0]),
+        int.parse(horaPartes[1]),
+      );
+
+      final diff = agora.difference(dtSms);
+
+      if (diff.inMinutes < 1) return "Agora mesmo";
+      if (diff.inMinutes < 60) return "Há ${diff.inMinutes} min";
+      if (diff.inHours < 24) return "Há ${diff.inHours} h";
+      return dataSms; // Se for de outro dia, mostra a data normal
+    } catch (e) {
+      return dataSms;
+    }
+  }
+
+  // 🚀 NOVO: Cópia inteligente com extração de código
+  void _copiarSms(String texto) {
+    if (texto.isEmpty) return;
+
+    // Procura por sequências de 4 a 8 dígitos (padrão de OTP/Token)
+    final RegExp regExp = RegExp(r'\b\d{4,8}\b');
+    final Match? match = regExp.firstMatch(texto);
+
+    String textoParaCopiar;
+    String labelToast;
+
+    if (match != null) {
+      textoParaCopiar = match.group(0)!;
+      labelToast = "Código de verificação copiado!"; // Sucesso na extração
+    } else {
+      textoParaCopiar = texto;
+      labelToast = "Conteúdo do SMS copiado!"; // Fallback: mensagem completa
+    }
+
+    Clipboard.setData(ClipboardData(text: textoParaCopiar));
+    HapticFeedback.lightImpact();
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              labelToast,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        backgroundColor: AppTheme.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   @override
@@ -2910,46 +3351,72 @@ class _SmsScreenState extends State<SmsScreen> {
               itemCount: _smsHistory.length,
               itemBuilder: (BuildContext context, int index) {
                 final Map<String, String> sms = _smsHistory[index];
+                final String mensagem = sms["mensagem"] ?? "";
+                // 🚀 Chama o formatador de tempo relativo
+                final String tempoRelativo = _formatarTempoSms(sms["hora"]);
+
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppTheme.card,
+                  child: InkWell(
+                    onTap: () => _copiarSms(mensagem), // 🚀 Cópia Inteligente
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.card,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            sms["remetente"] ?? "",
-                            style: const TextStyle(
-                              color: AppTheme.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                sms["remetente"] ?? "",
+                                style: const TextStyle(
+                                  color: AppTheme.green,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // 🚀 Exibe o tempo relativo (Há X min)
+                                  Text(
+                                    tempoRelativo,
+                                    style: const TextStyle(
+                                      color: AppTheme.muted,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () => Share.share(mensagem),
+                                    child: const Icon(
+                                      Icons.share,
+                                      size: 14,
+                                      color: AppTheme.muted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 6),
                           Text(
-                            sms["hora"] ?? "",
+                            mensagem,
                             style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 10,
+                              color: AppTheme.text,
+                              fontSize: 11,
+                              height: 1.3,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        sms["mensagem"] ?? "",
-                        style: const TextStyle(
-                          color: AppTheme.text,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 );
               },
@@ -2989,17 +3456,22 @@ class _LicenseScreenState extends State<LicenseScreen> {
     setState(() => _statusConexao = "Validando Licença...");
     final String id = await _auth.getDeviceId();
     final Map<String, String> dados = await _auth.getDadosUsuario();
-    final AuthStatus status = await _auth.validarAcessoDiario();
 
     if (mounted) {
       setState(() {
         _deviceId = id;
-        _userToken = dados['token']!;
-        _userEmail = dados['email']!;
-        _userUsuario = dados['usuario']!;
-        _userVencimento = dados['vencimento']!;
-        _userIdPlanilha = dados['idPlanilha']!;
+        _userToken = dados['token'] ?? "...";
+        _userEmail = dados['email'] ?? "...";
+        _userUsuario = dados['usuario'] ?? "...";
+        _userVencimento = dados['vencimento'] ?? "...";
+        _userIdPlanilha = dados['idPlanilha'] ?? "...";
+      });
+    }
 
+    final AuthStatus status = await _auth.validarAcessoDiario();
+
+    if (mounted) {
+      setState(() {
         _isBloqueado = (status != AuthStatus.autorizado);
         _statusConexao = (status == AuthStatus.autorizado)
             ? "Serviço Ativo"
@@ -3271,6 +3743,8 @@ E-mail: $emailAtual
   }
 
   Widget _buildStatusCard() {
+    final bool isVerifying = _statusConexao == "Validando Licença...";
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
@@ -3278,15 +3752,19 @@ E-mail: $emailAtual
         color: AppTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isBloqueado
-              ? AppTheme.red.withOpacity(0.3)
-              : AppTheme.green.withOpacity(0.2),
+          color: isVerifying
+              ? AppTheme.accent.withOpacity(0.3)
+              : (_isBloqueado
+                    ? AppTheme.red.withOpacity(0.3)
+                    : AppTheme.green.withOpacity(0.2)),
         ),
         boxShadow: [
           BoxShadow(
-            color: _isBloqueado
-                ? AppTheme.red.withOpacity(0.05)
-                : AppTheme.green.withOpacity(0.05),
+            color: isVerifying
+                ? AppTheme.accent.withOpacity(0.05)
+                : (_isBloqueado
+                      ? AppTheme.red.withOpacity(0.05)
+                      : AppTheme.green.withOpacity(0.05)),
             blurRadius: 20,
             spreadRadius: 5,
           ),
@@ -3312,22 +3790,36 @@ E-mail: $emailAtual
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _isBloqueado ? AppTheme.red : AppTheme.green,
+              // 🚀 UX: Mostra um mini-spinner azul se estiver validando, ou o ponto de cor
+              if (isVerifying)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.accent,
+                    strokeWidth: 2,
+                  ),
+                )
+              else
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isBloqueado ? AppTheme.red : AppTheme.green,
+                  ),
                 ),
-              ),
               const SizedBox(width: 10),
               Text(
                 _statusConexao.toUpperCase(),
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize:
+                      16, // Reduzi levemente pra encaixar o "VALIDANDO..."
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  color: _isBloqueado ? AppTheme.red : Colors.white,
+                  letterSpacing: 1.2,
+                  color: isVerifying
+                      ? AppTheme.accent
+                      : (_isBloqueado ? AppTheme.red : Colors.white),
                 ),
               ),
             ],
