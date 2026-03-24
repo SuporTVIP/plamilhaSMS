@@ -30,6 +30,11 @@ import 'utils/web_highlight.dart';
 import 'utils/web_window_manager.dart';
 import 'widgets/consentimento_dialog.dart';
 
+/// Singleton para cache global de dados de aeroportos (QoL Tooltips VIP)
+class AirportCache {
+  static Map<String, String> iataToFullName = {};
+}
+
 // Instância global de Notificações
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
@@ -1205,6 +1210,7 @@ class _AlertsScreenState extends State<AlertsScreen>
   // dentro da sua classe _AlertsScreenState
   final Map<String, int> _highlightRetryCount = {};
   static const int _maxHighlightRetries = 10;
+  final Set<String> _regioesExpandidasBarra = {};
 
   UserFilters _filtros = UserFilters();
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -1244,6 +1250,34 @@ class _AlertsScreenState extends State<AlertsScreen>
     _carregarFiltros();
     _verificarNotificacaoDeAbertura();
     _carregarConfigGist(); // maintenance_mode, announcement, min_version
+    _popularDicionarioIata();
+  }
+
+  // =========================================================================
+  // 🌍 QoL VIP: Popula o Dicionário Estático de IATAs na abertura do App
+  // =========================================================================
+  Future<void> _popularDicionarioIata() async {
+    try {
+      final List<String> list = await AeroportoService().getAeroportos();
+      if (list.isNotEmpty) {
+        for (String aero in list) {
+          final partes = aero.split(' - ');
+          if (partes.length >= 2) {
+            final String iata = partes[0].trim().toUpperCase();
+            final String nome = partes[1].trim();
+            AirportCache.iataToFullName[iata] = nome;
+          }
+        }
+        debugPrint(
+          "🧠 [CÉREBRO VIP] Dicionário IATA carregado com ${AirportCache.iataToFullName.length} aeroportos.",
+        );
+
+        // 🚀 Atualiza a tela para os cards reconhecerem os nomes imediatamente
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      debugPrint("⚠️ Erro ao carregar Dicionário IATA: $e");
+    }
   }
 
   void _verificarNotificacaoDeAbertura() {
@@ -1906,19 +1940,87 @@ class _AlertsScreenState extends State<AlertsScreen>
       }
     }
 
-    for (String origem in _filtros.origens) {
-      final sigla = origem.split(' - ').first;
-      chips.add(
-        _buildMiniChip("🛫 $sigla", () => _removerFiltroLocal(true, origem)),
-      );
+    // 🚀 MOTOR DE AGRUPAMENTO DA BARRA HORIZONTAL
+    void agruparBarra(List<String> lista, bool isOrigem) {
+      Map<String, List<String>> agrupado = {};
+      for (String item in lista) {
+        final partes = item.split(' - ');
+        if (partes.length >= 3) {
+          agrupado
+              .putIfAbsent(partes.last.trim().toUpperCase(), () => [])
+              .add(item);
+        } else {
+          chips.add(
+            _buildMiniChip(
+              isOrigem ? "🛫 ${partes.first}" : "🛬 ${partes.first}",
+              () => _removerFiltroLocal(isOrigem, item),
+            ),
+          );
+        }
+      }
+
+      agrupado.forEach((regiao, aeros) {
+        final key = "${isOrigem ? 'O' : 'D'}_$regiao";
+        if (aeros.length >= 2) {
+          if (_regioesExpandidasBarra.contains(key)) {
+            // MODO EXPANDIDO
+            chips.add(
+              _buildMiniChip(
+                "🔽 $regiao",
+                () => setState(() => _regioesExpandidasBarra.remove(key)),
+                corBorda: AppTheme.border,
+                corFundo: Colors.transparent,
+              ),
+            );
+            for (String aero in aeros) {
+              chips.add(
+                _buildMiniChip(
+                  isOrigem
+                      ? "🛫 ${aero.split(' - ').first}"
+                      : "🛬 ${aero.split(' - ').first}",
+                  () => _removerFiltroLocal(isOrigem, aero),
+                ),
+              );
+            }
+          } else {
+            // 🌍 MODO COMPACTO (A pílula que apaga tudo)
+            chips.add(
+              _buildMiniChip(
+                "🌍 ${isOrigem ? 'De' : 'Para'} $regiao (${aeros.length})",
+                () {
+                  // O X deleta tudo
+                  setState(() {
+                    lista.removeWhere((e) => aeros.contains(e));
+                    _aplicarFiltrosNaTela();
+                    _rebuildIndex();
+                  });
+                  _filtros.save();
+                },
+                onTap: () => setState(
+                  () => _regioesExpandidasBarra.add(key),
+                ), // O clique expande
+                corFundo: AppTheme.accent.withOpacity(0.3),
+                corBorda: AppTheme.accent,
+              ),
+            );
+          }
+        } else {
+          for (String aero in aeros) {
+            chips.add(
+              _buildMiniChip(
+                isOrigem
+                    ? "🛫 ${aero.split(' - ').first}"
+                    : "🛬 ${aero.split(' - ').first}",
+                () => _removerFiltroLocal(isOrigem, aero),
+              ),
+            );
+          }
+        }
+      });
     }
 
-    for (String destino in _filtros.destinos) {
-      final sigla = destino.split(' - ').first;
-      chips.add(
-        _buildMiniChip("🛬 $sigla", () => _removerFiltroLocal(false, destino)),
-      );
-    }
+    agruparBarra(_filtros.origens, true);
+    agruparBarra(_filtros.destinos, false);
 
     return Container(
       height: 48,
@@ -1933,25 +2035,77 @@ class _AlertsScreenState extends State<AlertsScreen>
     );
   }
 
-  
-  Widget _buildMiniChip(String label, VoidCallback onDeleted) {
+  Widget _buildMiniChip(
+    String label,
+    VoidCallback onDeleted, {
+    VoidCallback? onTap,
+    Color? corBorda,
+    Color? corFundo,
+  }) {
+    // ==========================================================
+    // 🚀 CÉREBRO DO TOOLTIP NA PÍLULA
+    // Tenta achar as 3 letras da IATA dentro do label (ex: "🛫 AFL")
+    // ==========================================================
+    String tooltipMsg = "";
+    final match = RegExp(r'[A-Z]{3}').firstMatch(label);
+
+    if (match != null) {
+      final iata = match.group(0)!;
+      final nome = AirportCache.iataToFullName[iata]; // Busca no nosso cache!
+      if (nome != null) {
+        tooltipMsg = "🌍 $iata: $nome";
+      }
+    }
+
+    // O texto base da pílula
+    Widget textWidget = Text(
+      label,
+      style: const TextStyle(
+        color: AppTheme.text,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    );
+
+    // Se achou no dicionário, embrulha o texto com o Tooltip Mágico
+    if (tooltipMsg.isNotEmpty) {
+      textWidget = Tooltip(
+        message: tooltipMsg,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white12),
+        ),
+        textStyle: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+        preferBelow: true,
+        waitDuration: kIsWeb
+            ? const Duration(milliseconds: 100)
+            : const Duration(milliseconds: 500),
+        child: textWidget,
+      );
+    }
+
     return Container(
       height: 32,
       padding: const EdgeInsets.only(left: 12, right: 4),
       decoration: BoxDecoration(
-        color: AppTheme.accent.withOpacity(0.15),
+        color: corFundo ?? AppTheme.accent.withOpacity(0.15),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.accent.withOpacity(0.5)),
+        border: Border.all(color: corBorda ?? AppTheme.accent.withOpacity(0.5)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppTheme.text,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
+          InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: textWidget, // 🚀 Coloca o texto (com ou sem Tooltip) aqui
             ),
           ),
           const SizedBox(width: 4),
@@ -1969,36 +2123,85 @@ class _AlertsScreenState extends State<AlertsScreen>
   }
 
   Widget _buildSmartEmptyState() {
+    // Substitua o bloco `if (_hasActiveFilters)` inteiro por este:
     if (_hasActiveFilters) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.filter_alt_off,
-              size: 64,
-              color: AppTheme.yellow,
-            ).animate().scale(
-              delay: 200.ms,
-              duration: 400.ms,
-              curve: Curves.easeOutBack,
+            // 🚀 UX VIP: Efeito Sonar/Radar flutuante suave e animado
+            // 🚀 UX VIP: Efeito Sonar/Radar flutuante suave e animado
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Os Círculos de Onda (Sonar)
+                Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppTheme.border.withOpacity(0.05),
+                      ),
+                    )
+                    .animate(onPlay: (controller) => controller.repeat())
+                    .scale(
+                      begin: const Offset(1.0, 1.0), // 👈 CORREÇÃO AQUI
+                      end: const Offset(1.8, 1.8), // 👈 CORREÇÃO AQUI
+                      duration: 1.5.seconds,
+                      curve: Curves.easeOut,
+                    )
+                    .fade(begin: 0.5, end: 0.0),
+
+                Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppTheme.border.withOpacity(0.1),
+                      ),
+                    )
+                    .animate(onPlay: (controller) => controller.repeat())
+                    .scale(
+                      begin: const Offset(1.0, 1.0), // 👈 CORREÇÃO AQUI
+                      end: const Offset(2.2, 2.2), // 👈 CORREÇÃO AQUI
+                      delay: 500.ms,
+                      duration: 1.5.seconds,
+                      curve: Curves.easeOut,
+                    )
+                    .fade(begin: 0.3, end: 0.0),
+
+                // O ícone do Radar Central
+                const Icon(
+                      Icons.satellite_alt_rounded,
+                      size: 40,
+                      color: AppTheme.border,
+                    )
+                    .animate(
+                      onPlay: (controller) => controller.repeat(reverse: true),
+                    )
+                    .moveY(begin: -3, end: 3, duration: 1.seconds),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 32),
             const Text(
-              'Nenhuma emissão atende aos seus filtros.',
+              'Rastreando o Céu...',
               style: TextStyle(
                 color: AppTheme.text,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
-              textAlign: TextAlign.center,
             ).animate().fade(delay: 300.ms).slideY(begin: 0.2, end: 0),
             const SizedBox(height: 8),
             const Text(
-              'Tente remover algumas restrições.',
-              style: TextStyle(color: AppTheme.muted, fontSize: 13),
+              'O sonar VIP está varrendo o banco de dados das companhias.\nNenhum voo para os seus filtros por enquanto!',
+              style: TextStyle(
+                color: AppTheme.muted,
+                fontSize: 13,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
             ).animate().fade(delay: 400.ms),
-            const SizedBox(height: 24),
+            const SizedBox(height: 30),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppTheme.red.withOpacity(0.1),
@@ -2175,17 +2378,15 @@ class _AlertsScreenState extends State<AlertsScreen>
             backgroundColor: AppTheme.surface,
             strokeWidth: 3, // 🚀 Fica mais gordinho e premium
             onRefresh: () async {
-              // 🚀 UX: Vibração ao puxar a lista
+              // 🚀 UX: Vibração ao puxar a lista (Feedback Tátil)
               HapticFeedback.mediumImpact();
 
               await _alertService.forceSync(silencioso: false);
 
               if (mounted) {
-                if (_isSoundEnabled && !kIsWeb) {
-                  _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
-                }
+                // 🚀 UX: Som removido a pedido do feedback (evita irritar o usuário).
+                // O SnackBar verde abaixo já é o feedback visual perfeito!
 
-                // 🚀 UX: O SnackBar de sucesso que o relatório pediu
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: const Row(
@@ -2306,6 +2507,38 @@ class _AlertCardState extends State<AlertCard> {
   // =========================================================================
   // 🚀 NOVAS FUNÇÕES DE QoL (Quality of Life)
   // =========================================================================
+
+  /// 🌍 CÉREBRO QoL: Converte "GRU" -> "São Paulo Guarulhos" p/ Leigos
+  String _expandTrechoTooltip(String trechoRaw) {
+    if (trechoRaw == "N/A" || trechoRaw.isEmpty) return "";
+
+    RegExp iataRegExp = RegExp(r'\b\w{3}\b');
+    Iterable<Match> matches = iataRegExp.allMatches(trechoRaw);
+
+    String tooltipText = "";
+    Set<String> iatasFound = {};
+
+    for (Match match in matches) {
+      iatasFound.add(match.group(0)!);
+    }
+
+    if (iatasFound.isNotEmpty) {
+      for (int i = 0; i < iatasFound.length; i++) {
+        final String iata = iatasFound.elementAt(i).toUpperCase();
+        final String? fullName = AirportCache.iataToFullName[iata];
+
+        if (fullName != null) {
+          tooltipText += "🌍 $iata: $fullName";
+        }
+
+        if (i < iatasFound.length - 1 && tooltipText.isNotEmpty) {
+          tooltipText += "\n";
+        }
+      }
+    }
+
+    return tooltipText;
+  }
 
   /// Copia o texto para a área de transferência com feedback tátil e visual
   void _copiarTexto(String texto, String label) {
@@ -2601,19 +2834,40 @@ class _AlertCardState extends State<AlertCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 🚀 UX: Long Press no Trecho para Copiar
+                // 🚀 UX: Long Press no Trecho para Copiar
                 GestureDetector(
                   onTap: () => _copiarTexto(trechoDisplay, "Trecho"),
                   onLongPress: () => _copiarTexto(trechoDisplay, "Trecho"),
-                  child: Text(
-                    trechoDisplay,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: Colors.white,
+                  // 👇 Substitua a partir daqui! 👇
+                  child: Tooltip(
+                    message: _expandTrechoTooltip(trechoDisplay),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    textStyle: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
+                    preferBelow: true,
+                    verticalOffset: 20,
+                    waitDuration: kIsWeb
+                        ? const Duration(milliseconds: 100)
+                        : const Duration(seconds: 1000),
+                    child: Text(
+                      trechoDisplay,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Colors.white,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  // 👆 Até aqui! 👆
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -4242,6 +4496,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
   late UserFilters _tempFiltros;
   List<String> _todosAeroportos = [];
   bool _isLoadingAeros = true;
+  final Set<String> _regioesExpandidas = {};
 
   @override
   void initState() {
@@ -4268,6 +4523,22 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
 
   Future<void> _carregarAeroportos() async {
     final List<String> list = await AeroportoService().getAeroportos();
+
+    // =========================================================================
+    // 🌍 QoL VIP: Popula o Dicionário Estático de IATAs instantaneamente
+    // =========================================================================
+    if (list.isNotEmpty) {
+      for (String aero in list) {
+        final partes = aero.split(' - ');
+        if (partes.length >= 2) {
+          final String iata = partes[0].trim().toUpperCase();
+          final String nome = partes[1].trim();
+
+          AirportCache.iataToFullName[iata] = nome;
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
         _todosAeroportos = list;
@@ -4448,37 +4719,302 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     TextEditingController controller,
     FocusNode focusNode,
   ) {
+    // 🚀 Extrai as regiões dinamicamente direto da lista do servidor
+    final Set<String> regioesSet = {};
+    for (String aero in _todosAeroportos) {
+      final partes = aero.split(' - ');
+      if (partes.length >= 3) {
+        regioesSet.add(partes.last.trim().toUpperCase());
+      }
+    }
+
+    // 🗺️ UX VIP: Ordenação Geográfica Inteligente (De cima p/ baixo no mapa)
+    final List<String> ordemGeografica = [
+      "NORTE",
+      "NORDESTE",
+      "CENTRO-OESTE",
+      "SUDESTE",
+      "SUL",
+      "EXTERIOR",
+    ];
+
+    final List<String> regioes = regioesSet.toList()
+      ..sort((a, b) {
+        int indexA = ordemGeografica.indexOf(a);
+        int indexB = ordemGeografica.indexOf(b);
+
+        // Se aparecer alguma região nova na planilha que não tá na lista, joga pro final
+        if (indexA == -1) indexA = 999;
+        if (indexB == -1) indexB = 999;
+
+        // Se ambas não estiverem na lista, ordena alfabeticamente entre elas
+        if (indexA == 999 && indexB == 999) return a.compareTo(b);
+
+        return indexA.compareTo(indexB);
+      });
+
     return Column(
+      // ... O resto da função continua exatamente igual a partir daqui ...
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          titulo.toUpperCase(),
-          style: const TextStyle(
-            color: AppTheme.muted,
-            fontSize: 11,
-            letterSpacing: 1.5,
-            fontWeight: FontWeight.bold,
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              titulo.toUpperCase(),
+              style: const TextStyle(
+                color: AppTheme.muted,
+                fontSize: 11,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 🧹 O BOTÃO DE LIMPEZA RÁPIDA (Só aparece se tiver algo)
+                if (listaSelecionados.isNotEmpty)
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        listaSelecionados
+                            .clear(); // 🧨 Zera a lista instantaneamente
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6.0,
+                        vertical: 4.0,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.delete_sweep,
+                            color: AppTheme.red.withOpacity(0.8),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "Limpar",
+                            style: TextStyle(
+                              color: AppTheme.red.withOpacity(0.8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                if (listaSelecionados.isNotEmpty) const SizedBox(width: 8),
+
+                // 🚀 O BOTÃO DE DROPDOWN DE REGIÕES
+                if (regioes.isNotEmpty)
+                  PopupMenuButton<String>(
+                    tooltip: "Adicionar por Região",
+                    icon: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.travel_explore,
+                          color: AppTheme.accent,
+                          size: 16,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          "Regiões",
+                          style: TextStyle(
+                            color: AppTheme.accent,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    color: AppTheme.card,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    onSelected: (String regiaoEscolhida) {
+                      setState(() {
+                        for (String aero in _todosAeroportos) {
+                          if (aero.toUpperCase().endsWith(regiaoEscolhida) &&
+                              !listaSelecionados.contains(aero)) {
+                            listaSelecionados.add(aero);
+                          }
+                        }
+                      });
+                    },
+                    itemBuilder: (BuildContext context) {
+                      return regioes.map((String regiao) {
+                        return PopupMenuItem<String>(
+                          value: regiao,
+                          child: Text(
+                            "🌍 Adicionar $regiao",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      }).toList();
+                    },
+                  ),
+              ],
+            ),
+          ],
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 8.0,
-          children: listaSelecionados.map((String item) {
-            return Chip(
-              label: Text(
-                item,
-                style: const TextStyle(fontSize: 12, color: Colors.white),
-              ),
-              backgroundColor: AppTheme.card,
-              deleteIcon: const Icon(
-                Icons.close,
-                size: 16,
-                color: AppTheme.red,
-              ),
-              onDeleted: () => setState(() => listaSelecionados.remove(item)),
-            );
-          }).toList(),
+
+        const SizedBox(height: 10),
+
+        // 🚀 O NOVO WRAP COM INTELIGÊNCIA DE AGRUPAMENTO
+        Builder(
+          builder: (context) {
+            Map<String, List<String>> agrupado = {};
+            List<String> avulsos = [];
+
+            // Separa quem tem região de quem não tem
+            for (String item in listaSelecionados) {
+              final partes = item.split(' - ');
+              if (partes.length >= 3) {
+                agrupado
+                    .putIfAbsent(partes.last.trim().toUpperCase(), () => [])
+                    .add(item);
+              } else {
+                avulsos.add(item);
+              }
+            }
+
+            List<Widget> chips = [];
+
+            // 1. Aeroportos Avulsos (Sem região)
+            for (String item in avulsos) {
+              chips.add(
+                Chip(
+                  label: Text(
+                    item,
+                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                  ),
+                  backgroundColor: AppTheme.card,
+                  deleteIcon: const Icon(
+                    Icons.close,
+                    size: 16,
+                    color: AppTheme.red,
+                  ),
+                  onDeleted: () =>
+                      setState(() => listaSelecionados.remove(item)),
+                ),
+              );
+            }
+
+            // 2. Regiões Agrupadas
+            agrupado.forEach((regiao, aeros) {
+              final String key = "${titulo}_$regiao";
+
+              if (aeros.length >= 2) {
+                // Se escolheu 2 ou mais, agrupa!
+                if (_regioesExpandidas.contains(key)) {
+                  // 🔽 MODO EXPANDIDO (Mostra o botão de ocultar + todos os aeroportos)
+                  chips.add(
+                    InputChip(
+                      label: Text(
+                        "🔽 Ocultar $regiao",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: AppTheme.border,
+                      onPressed: () =>
+                          setState(() => _regioesExpandidas.remove(key)),
+                    ),
+                  );
+                  for (String aero in aeros) {
+                    chips.add(
+                      Chip(
+                        label: Text(
+                          aero,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                        backgroundColor: AppTheme.card,
+                        deleteIcon: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: AppTheme.red,
+                        ),
+                        onDeleted: () =>
+                            setState(() => listaSelecionados.remove(aero)),
+                      ),
+                    );
+                  }
+                } else {
+                  // 🌍 MODO COMPACTO (A Pílula VIP)
+                  chips.add(
+                    InputChip(
+                      label: Text(
+                        "🌍 Região: $regiao (${aeros.length})",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      backgroundColor: AppTheme.accent.withOpacity(0.3),
+                      side: const BorderSide(color: AppTheme.accent),
+                      deleteIcon: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: AppTheme.red,
+                      ),
+                      onDeleted: () => setState(
+                        () => listaSelecionados.removeWhere(
+                          (e) => aeros.contains(e),
+                        ),
+                      ), // Apaga todos!
+                      onPressed: () => setState(
+                        () => _regioesExpandidas.add(key),
+                      ), // Expande!
+                    ),
+                  );
+                }
+              } else {
+                // Só tem 1 aeroporto dessa região, exibe normalzinho
+                for (String aero in aeros) {
+                  chips.add(
+                    Chip(
+                      label: Text(
+                        aero,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                      backgroundColor: AppTheme.card,
+                      deleteIcon: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: AppTheme.red,
+                      ),
+                      onDeleted: () =>
+                          setState(() => listaSelecionados.remove(aero)),
+                    ),
+                  );
+                }
+              }
+            });
+
+            return Wrap(spacing: 8.0, runSpacing: 8.0, children: chips);
+          },
         ),
         if (listaSelecionados.isNotEmpty) const SizedBox(height: 10),
         Autocomplete<String>(
