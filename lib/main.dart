@@ -30,11 +30,6 @@ import 'utils/web_highlight.dart';
 import 'utils/web_window_manager.dart';
 import 'widgets/consentimento_dialog.dart';
 
-/// Singleton para cache global de dados de aeroportos (QoL Tooltips VIP)
-class AirportCache {
-  static Map<String, String> iataToFullName = {};
-}
-
 // Instância global de Notificações
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();

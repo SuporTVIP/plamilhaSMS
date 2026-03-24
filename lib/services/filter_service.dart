@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -7,6 +8,11 @@ import '../models/alert.dart';
 import '../utils/logger.dart';
 import '../utils/web_filters_sync.dart';
 import 'discovery_service.dart';
+
+/// Singleton para cache global de dados de aeroportos (QoL Tooltips VIP)
+class AirportCache {
+  static Map<String, String> iataToFullName = {};
+}
 
 /// Define e gerencia as preferencias de filtragem de alertas do usuario.
 ///
@@ -51,6 +57,9 @@ class UserFilters {
         .trim()
         .toUpperCase();
   }
+
+  @visibleForTesting
+  static String normalizarParaTeste(String texto) => _normalizar(texto);
 
   static Future<UserFilters> load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -247,8 +256,23 @@ class UserFilters {
     }
 
     final String localVooNorm = _normalizar(localVoo);
+
+    // 🚀 INTEGRAÇÃO VIP: Usa o AirportCache dinâmico em vez do mapa fixo!
+    String? cidadeAliasNorm;
+    // Procura por uma sigla IATA de 3 letras no trecho recebido (Ex: "GRU")
+    final matchIata = RegExp(r'\b[A-Z]{3}\b').firstMatch(localVooNorm);
+    if (matchIata != null) {
+      final String nomeCompleto =
+          AirportCache.iataToFullName[matchIata.group(0)!] ?? '';
+      if (nomeCompleto.isNotEmpty) {
+        cidadeAliasNorm = _normalizar(
+          nomeCompleto,
+        ); // Normaliza para comparar: "SAO PAULO GUARULHOS"
+      }
+    }
+
     AppLogger.log(
-      '$etiqueta REGRA onde=$tipoFiltro localOriginal="$localVoo" localNormalizado="$localVooNorm" candidatos=$listaUsuario',
+      '$etiqueta REGRA onde=$tipoFiltro localOriginal="$localVoo" localNormalizado="$localVooNorm" aliasDinâmico="$cidadeAliasNorm" candidatos=$listaUsuario',
     );
 
     for (final String filtroUsuario in listaUsuario) {
@@ -258,10 +282,20 @@ class UserFilters {
           ? _normalizar(partesUsu[1])
           : '';
 
-      if (localVooNorm.contains(iata) ||
-          (cidade.isNotEmpty && localVooNorm.contains(cidade))) {
-        final String motivo = cidade.isNotEmpty && localVooNorm.contains(cidade)
+      final bool bateIata = localVooNorm.contains(iata);
+      final bool bateCidade =
+          cidade.isNotEmpty && localVooNorm.contains(cidade);
+      // 👇 Verifica se a cidade configurada no filtro bate com o nome que achamos no cache
+      final bool bateCidadeAlias =
+          cidade.isNotEmpty &&
+          cidadeAliasNorm != null &&
+          cidadeAliasNorm.contains(cidade);
+
+      if (bateIata || bateCidade || bateCidadeAlias) {
+        final String motivo = bateCidade
             ? 'bateu com cidade "$cidade" do filtro "$filtroUsuario"'
+            : bateCidadeAlias
+            ? 'bateu com cidade "$cidade" via alias dinâmico IATA "$cidadeAliasNorm"'
             : 'bateu com IATA "$iata" do filtro "$filtroUsuario"';
         AppLogger.log(
           '$etiqueta REGRA onde=$tipoFiltro filtro="$filtroUsuario" resultado=match porque="$motivo"',
@@ -271,7 +305,7 @@ class UserFilters {
 
       AppLogger.log(
         '$etiqueta REGRA onde=$tipoFiltro filtro="$filtroUsuario" resultado=nao_match '
-        'porque="local $localVooNorm nao contem iata $iata nem cidade ${cidade.isEmpty ? "(vazia)" : cidade}"',
+        'porque="local $localVooNorm nao contem iata $iata nem cidade ${cidade.isEmpty ? "(vazia)" : cidade}${cidadeAliasNorm == null ? "" : " (alias=$cidadeAliasNorm)"}"',
       );
     }
 

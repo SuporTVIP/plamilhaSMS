@@ -48,7 +48,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final config = await DiscoveryService().getConfig();
       // Se não encontrar no Gist, usa o fallback padrão
       String urlString =
-          config?.urlRenovacaoLicenca ?? "https://plamilhasweb.suportvip.com/";
+          config?.urlRenovacaoLicenca ?? "https://pramilhas.suportvip.com/";
       final Uri uri = Uri.parse(urlString);
 
       if (await canLaunchUrl(uri)) {
