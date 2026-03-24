@@ -10,6 +10,7 @@ import 'package:PlamilhaSVIP/utils/web_stub.dart'
     if (dart.library.html) 'dart:html'
     as html;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http; // 🚀 PODE COLOCAR AQUI SEM MEDO
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -282,10 +283,9 @@ void main() async {
 
   runApp(const MilhasAlertApp());
 
-  // Web: permissão e token em background
-  // Web: permissão e token em background
+  // Web: o receptor do destaque continua ativo, mas o token push
+  // só é sincronizado após a sessão ser validada pelo servidor.
   if (kIsWeb) {
-    unawaited(_configurarPushWeb());
     iniciarReceptorWebHighlight((String trecho) {
       debugPrint(
         "🌐 [WEB] Clique recebido! Ignorando timer e forçando PULL...",
@@ -306,7 +306,7 @@ void main() async {
 }
 
 /// Configura push web em background.
-Future<void> _configurarPushWeb() async {
+Future<void> _configurarPushWeb({bool sincronizarComServidor = false}) async {
   try {
     final FirebaseMessaging messaging = FirebaseMessaging.instance;
 
@@ -338,6 +338,15 @@ Future<void> _configurarPushWeb() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString('FCM_TOKEN_WEB', webToken);
     debugPrint("💾 [WEB] Token salvo.");
+
+    if (sincronizarComServidor) {
+      final bool ok = await AuthService().sincronizarTokenPushWebAutorizado();
+      debugPrint(
+        ok
+            ? "✅ [WEB] Token push associado à sessão autorizada."
+            : "⛔ [WEB] Token push não foi associado ao servidor.",
+      );
+    }
   } catch (e) {
     debugPrint("⚠️ [WEB] Erro ao configurar push web: $e");
   }
@@ -700,9 +709,68 @@ class _MainNavigatorState extends State<MainNavigator>
     if (!kIsWeb) {
       PermissionStatus status =
           await Permission.ignoreBatteryOptimizations.status;
+
       if (!status.isGranted) {
-        // Abre um popup do sistema pedindo para o usuário "Permitir" que o app rode sem limites
-        await Permission.ignoreBatteryOptimizations.request();
+        if (mounted) {
+          // 🚀 UX: Explica O POR QUÊ antes de pedir a permissão nativa
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext ctx) {
+              return AlertDialog(
+                backgroundColor: AppTheme.surface,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: const Row(
+                  children: [
+                    Icon(Icons.battery_alert, color: AppTheme.yellow, size: 24),
+                    SizedBox(width: 10),
+                    Text(
+                      "Atenção à Bateria",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                content: const Text(
+                  "Para que o Radar VIP consiga capturar as emissões no fundo da tela (mesmo com o celular no bolso), precisamos que você permita que o app ignore as otimizações de bateria.\n\nNa próxima tela, clique em 'Permitir'.",
+                  style: TextStyle(
+                    color: AppTheme.text,
+                    height: 1.4,
+                    fontSize: 14,
+                  ),
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.accent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      // Agora sim, pede a permissão nativa do sistema!
+                      await Permission.ignoreBatteryOptimizations.request();
+                    },
+                    child: const Text(
+                      "ENTENDI",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        }
       }
     }
   }
@@ -878,7 +946,14 @@ class _MainNavigatorState extends State<MainNavigator>
     // ⚡ Performance O(1): Validação simples de token/data
     final AuthStatus status = await AuthService().validarAcessoDiario();
 
-    if (status != AuthStatus.autorizado && mounted) {
+    if (status == AuthStatus.autorizado) {
+      if (kIsWeb) {
+        await _configurarPushWeb(sincronizarComServidor: true);
+      }
+      return;
+    }
+
+    if (mounted) {
       debugPrint(
         "⛔ [SEGURANÇA] Licença expirada ou inválida. Expulsando usuário...",
       );
@@ -1590,6 +1665,19 @@ class _AlertsScreenState extends State<AlertsScreen>
     await _filtros.save();
   }
 
+  void _alterarCompanhiaLocal(String cia, bool estado) async {
+    setState(() {
+      if (cia == "Azul") _filtros.azulAtivo = estado;
+      if (cia == "Latam") _filtros.latamAtivo = estado;
+      if (cia == "Smiles") _filtros.smilesAtivo = estado;
+      if (cia == "Outros") _filtros.outrosAtivo = estado;
+
+      _aplicarFiltrosNaTela();
+      _rebuildIndex();
+    });
+    await _filtros.save();
+  }
+
   void _removerFiltroLocal(bool isOrigem, String local) async {
     setState(() {
       if (isOrigem) {
@@ -1775,14 +1863,47 @@ class _AlertsScreenState extends State<AlertsScreen>
         !_filtros.latamAtivo ||
         !_filtros.smilesAtivo ||
         !_filtros.outrosAtivo) {
-      final List<String> ativas = [];
-      if (_filtros.azulAtivo) ativas.add("Azul");
-      if (_filtros.latamAtivo) ativas.add("Latam");
-      if (_filtros.smilesAtivo) ativas.add("Smiles");
-      if (_filtros.outrosAtivo) ativas.add("Outros");
+      // Se a companhia está ativa, cria um chip pra ela. O "X" desativa ela.
+      if (_filtros.azulAtivo) {
+        chips.add(
+          _buildMiniChip(
+            "✈️ Azul",
+            () => _alterarCompanhiaLocal("Azul", false),
+          ),
+        );
+      }
+      if (_filtros.latamAtivo) {
+        chips.add(
+          _buildMiniChip(
+            "✈️ Latam",
+            () => _alterarCompanhiaLocal("Latam", false),
+          ),
+        );
+      }
+      if (_filtros.smilesAtivo) {
+        chips.add(
+          _buildMiniChip(
+            "✈️ Smiles",
+            () => _alterarCompanhiaLocal("Smiles", false),
+          ),
+        );
+      }
+      if (_filtros.outrosAtivo) {
+        chips.add(
+          _buildMiniChip(
+            "✈️ Outros",
+            () => _alterarCompanhiaLocal("Outros", false),
+          ),
+        );
+      }
 
-      final String label = ativas.isEmpty ? "Nenhuma Cia" : ativas.join(', ');
-      chips.add(_buildMiniChip("✈️ $label", _resetarCompanhias));
+      // Se o usuário fechou TODAS as companhias no dedo, mostramos um chip de reset geral
+      if (!_filtros.azulAtivo &&
+          !_filtros.latamAtivo &&
+          !_filtros.smilesAtivo &&
+          !_filtros.outrosAtivo) {
+        chips.add(_buildMiniChip("🚫 Nenhuma Cia", _resetarCompanhias));
+      }
     }
 
     for (String origem in _filtros.origens) {
@@ -1812,6 +1933,7 @@ class _AlertsScreenState extends State<AlertsScreen>
     );
   }
 
+  
   Widget _buildMiniChip(String label, VoidCallback onDeleted) {
     return Container(
       height: 32,
@@ -1852,7 +1974,15 @@ class _AlertsScreenState extends State<AlertsScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.filter_alt_off, size: 64, color: AppTheme.yellow),
+            const Icon(
+              Icons.filter_alt_off,
+              size: 64,
+              color: AppTheme.yellow,
+            ).animate().scale(
+              delay: 200.ms,
+              duration: 400.ms,
+              curve: Curves.easeOutBack,
+            ),
             const SizedBox(height: 16),
             const Text(
               'Nenhuma emissão atende aos seus filtros.',
@@ -1861,12 +1991,13 @@ class _AlertsScreenState extends State<AlertsScreen>
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
-            ),
+              textAlign: TextAlign.center,
+            ).animate().fade(delay: 300.ms).slideY(begin: 0.2, end: 0),
             const SizedBox(height: 8),
             const Text(
               'Tente remover algumas restrições.',
               style: TextStyle(color: AppTheme.muted, fontSize: 13),
-            ),
+            ).animate().fade(delay: 400.ms),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
@@ -1887,7 +2018,7 @@ class _AlertsScreenState extends State<AlertsScreen>
                 style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1),
               ),
               onPressed: _limparTodosFiltros,
-            ),
+            ).animate().fade(delay: 500.ms).scale(),
           ],
         ),
       );
@@ -1897,21 +2028,25 @@ class _AlertsScreenState extends State<AlertsScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.flight, size: 64, color: AppTheme.border),
+          // 🚀 UX: Ícone flutuante suave para indicar que o sistema está "vigiando"
+          const Icon(Icons.radar, size: 64, color: AppTheme.border)
+              .animate(onPlay: (controller) => controller.repeat(reverse: true))
+              .moveY(begin: -5, end: 5, duration: 2.seconds),
           const SizedBox(height: 16),
           const Text(
-            'Nenhuma emissão no momento.',
+            'Tudo limpo por aqui!',
             style: TextStyle(
               color: AppTheme.text,
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
-          ),
+          ).animate().fade(delay: 300.ms),
           const SizedBox(height: 8),
           const Text(
-            'Aguarde, o radar VIP capturará logo mais.',
+            'Aguarde, o radar VIP está varrendo as companhias.',
             style: TextStyle(color: AppTheme.muted, fontSize: 13),
-          ),
+            textAlign: TextAlign.center,
+          ).animate().fade(delay: 400.ms),
         ],
       ),
     );
@@ -2038,10 +2173,39 @@ class _AlertsScreenState extends State<AlertsScreen>
           child: RefreshIndicator(
             color: AppTheme.accent,
             backgroundColor: AppTheme.surface,
+            strokeWidth: 3, // 🚀 Fica mais gordinho e premium
             onRefresh: () async {
+              // 🚀 UX: Vibração ao puxar a lista
+              HapticFeedback.mediumImpact();
+
               await _alertService.forceSync(silencioso: false);
-              if (mounted && _isSoundEnabled && !kIsWeb) {
-                _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+
+              if (mounted) {
+                if (_isSoundEnabled && !kIsWeb) {
+                  _audioPlayer.play(AssetSource('sounds/alerta.mp3'));
+                }
+
+                // 🚀 UX: O SnackBar de sucesso que o relatório pediu
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.white, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "Radar atualizado com sucesso!",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: AppTheme.green,
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                );
               }
             },
             child: mainContent,
@@ -3482,7 +3646,45 @@ class _LicenseScreenState extends State<LicenseScreen> {
 
   Future<void> _fazerLogoff() async {
     setState(() => _isSaindo = true);
+
+    try {
+      // 1. Apaga no Firebase (Garante que o celular fica surdo IMEDIATAMENTE)
+      await FirebaseMessaging.instance.deleteToken();
+      debugPrint("🗑️ [FCM] Token destruído no Firebase.");
+
+      // 2. 🚀 AVISA O GOOGLE APPS SCRIPT PARA LIMPAR A VAGA E O TOKEN
+      final config = await DiscoveryService().getConfig();
+      if (config != null && config.gasUrl.isNotEmpty) {
+        final uri = Uri.parse(config.gasUrl);
+        await http
+            .post(
+              uri,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'action':
+                    'REMOVE_DEVICE', // 🚀 Bate perfeitamente com o seu GAS
+                'deviceId': _deviceId, // 🚀 A chave exata que o script espera
+              }),
+            )
+            .timeout(const Duration(seconds: 5));
+        debugPrint(
+          "🧹 [GAS] Planilha avisada do Logoff. Vaga e Token liberados!",
+        );
+      }
+    } catch (e) {
+      // Se o erro for de Fetch (CORS do GAS), nós ignoramos porque sabemos que o GAS executou no fundo.
+      if (e.toString().contains('Failed to fetch')) {
+        debugPrint(
+          "🧹 [GAS] Planilha avisada do Logoff (CORS ignorado). Vaga liberada!",
+        );
+      } else {
+        debugPrint("⚠️ Erro durante o logoff remoto: $e");
+      }
+    }
+
+    // 3. Limpa os dados de usuário locais do aparelho
     await _auth.logout();
+
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -3579,9 +3781,20 @@ class _LicenseScreenState extends State<LicenseScreen> {
         ),
         // Botão de recarga existente
         IconButton(
-          icon: const Icon(Icons.refresh, color: AppTheme.muted),
+          icon: _statusConexao == "Validando Licença..."
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    color: AppTheme.accent,
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Icon(Icons.refresh, color: AppTheme.muted),
           tooltip: 'Recarregar Dados',
-          onPressed: _inicializarSistema,
+          onPressed: _statusConexao == "Validando Licença..."
+              ? null
+              : _inicializarSistema,
         ),
         const SizedBox(width: 8),
       ],

@@ -10,10 +10,12 @@ import 'discovery_service.dart';
 enum AuthStatus {
   /// O dispositivo possui uma licença válida e ativa.
   autorizado,
+
   /// A licença está vencida ou o dispositivo foi bloqueado.
   bloqueado,
+
   /// Não foi possível verificar o status devido a falhas de rede.
-  erroRede
+  erroRede,
 }
 
 /// Serviço responsável por gerenciar a autenticação, licenças e identificação do dispositivo.
@@ -55,7 +57,13 @@ class AuthService {
   }
 
   /// Persiste as informações do usuário logado localmente.
-  Future<void> salvarLoginLocal(String email, String token, String usuario, String vencimento, String idPlanilha) async {
+  Future<void> salvarLoginLocal(
+    String email,
+    String token,
+    String usuario,
+    String vencimento,
+    String idPlanilha,
+  ) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyEmail, email);
     await prefs.setString(_keyToken, token);
@@ -91,7 +99,7 @@ class AuthService {
   /// Realiza uma verificação de autorização com o servidor.
   Future<AuthStatus> validarAcessoDiario() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    
+
     final String? email = prefs.getString(_keyEmail);
     final String? token = prefs.getString(_keyToken);
 
@@ -102,19 +110,23 @@ class AuthService {
 
     // 2. Bate no servidor (GAS) para ver se o token e o device ainda valem HOJE
     // Nota: O 'autenticarNoServidor' já vai atualizar a data de vencimento no SharedPreferences se der sucesso!
-    final Map<String, dynamic> resultado = await autenticarNoServidor(email, token);
+    final Map<String, dynamic> resultado = await autenticarNoServidor(
+      email,
+      token,
+      incluirTokensPush: false,
+    );
 
     if (resultado["sucesso"] == true) {
       return AuthStatus.autorizado;
-    } 
+    }
     // 3. MODO OFFLINE (Avião, Subsolo, etc)
-    else if (resultado["mensagem"] == "Servidor offline ou bloqueio de rede." || 
-             resultado["mensagem"] == "Falha de rede ao descobrir servidor.") {
+    else if (resultado["mensagem"] == "Servidor offline ou bloqueio de rede." ||
+        resultado["mensagem"] == "Falha de rede ao descobrir servidor.") {
       // Se for apenas falta de internet, não vamos expulsar o usuário por maldade.
       // Permitimos que ele use o app com base na última licença válida salva.
       _debugLog("🌐 [AUTH] Sem internet. Confiando no passe livre temporário.");
-      return AuthStatus.autorizado; 
-    } 
+      return AuthStatus.autorizado;
+    }
     // 4. O Servidor respondeu explicitamente que a licença VENCEU ou FOI BANIDA
     else {
       _debugLog("⛔ [AUTH] Servidor negou o acesso: ${resultado["mensagem"]}");
@@ -126,29 +138,39 @@ class AuthService {
   ///
   /// Realiza o envio do e-mail, token, ID do dispositivo e token FCM para notificações.
   /// Trata redirecionamentos 302 em ambientes nativos.
-  Future<Map<String, dynamic>> autenticarNoServidor(String email, String token) async {
+  Future<Map<String, dynamic>> autenticarNoServidor(
+    String email,
+    String token, {
+    bool incluirTokensPush = true,
+  }) async {
     final DiscoveryConfig? config = await _discovery.getConfig();
     final String? serverUrl = config?.gasUrl;
-    
+
     if (serverUrl == null) {
-      return {"sucesso": false, "mensagem": "Falha de rede ao descobrir servidor."};
+      return {
+        "sucesso": false,
+        "mensagem": "Falha de rede ao descobrir servidor.",
+      };
     }
 
     final String deviceId = await getDeviceId();
-    final String fcmToken = await _obterFcmToken();
-
-    // 🚀 LENDO O TOKEN DA WEB (Que foi salvo no main.dart)
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String fcmTokenWeb = prefs.getString('FCM_TOKEN_WEB') ?? "";
+    final String fcmTokenWeb = incluirTokensPush
+        ? prefs.getString('FCM_TOKEN_WEB') ?? ""
+        : "";
+    final String fcmToken = incluirTokensPush ? await _obterFcmToken() : "";
 
     final Map<String, dynamic> payload = {
       "action": "CHECK_DEVICE",
       "email": email,
       "deviceId": deviceId,
-      "fcmToken": fcmToken,
       "token": token,
-      "fcmTokenWeb": fcmTokenWeb, // 🚀 Enviando o token web para o servidor
     };
+
+    if (incluirTokensPush) {
+      payload["fcmToken"] = fcmToken;
+      payload["fcmTokenWeb"] = fcmTokenWeb;
+    }
 
     try {
       final String bodyData = jsonEncode(payload);
@@ -156,20 +178,26 @@ class AuthService {
 
       if (kIsWeb) {
         // No Navegador, o CORS nativo gerencia redirecionamentos
-        response = await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 33));
+        response = await http
+            .post(Uri.parse(serverUrl), body: bodyData)
+            .timeout(const Duration(seconds: 33));
       } else {
         // No Android/iOS, precisamos seguir o redirecionamento 302 manualmente
         final http.Request request = http.Request('POST', Uri.parse(serverUrl))
           ..followRedirects = false
           ..body = bodyData;
 
-        final http.StreamedResponse streamedResponse = await request.send().timeout(const Duration(seconds: 33));
+        final http.StreamedResponse streamedResponse = await request
+            .send()
+            .timeout(const Duration(seconds: 33));
         response = await http.Response.fromStream(streamedResponse);
 
         if (response.statusCode == 302 || response.statusCode == 303) {
           final String? redirectUrl = response.headers['location'];
           if (redirectUrl != null) {
-            response = await http.get(Uri.parse(redirectUrl)).timeout(const Duration(seconds: 33));
+            response = await http
+                .get(Uri.parse(redirectUrl))
+                .timeout(const Duration(seconds: 33));
           }
         }
       }
@@ -191,17 +219,56 @@ class AuthService {
           }
         } else {
           _debugLog("⚠️ Resposta inesperada: ${response.body}");
-          return {"sucesso": false, "mensagem": "Erro de protocolo do servidor."};
+          return {
+            "sucesso": false,
+            "mensagem": "Erro de protocolo do servidor.",
+          };
         }
       }
-      return {"sucesso": false, "mensagem": "Erro HTTP (${response.statusCode})"};
+      return {
+        "sucesso": false,
+        "mensagem": "Erro HTTP (${response.statusCode})",
+      };
     } catch (e) {
       _debugLog("❌ Erro Auth: $e");
-      return {"sucesso": false, "mensagem": "Servidor offline ou bloqueio de rede."};
+      return {
+        "sucesso": false,
+        "mensagem": "Servidor offline ou bloqueio de rede.",
+      };
     }
   }
 
-/// Remove o acesso do dispositivo localmente, limpa o cache e tenta notificar o servidor.
+  Future<bool> sincronizarTokenPushWebAutorizado() async {
+    if (!kIsWeb) return true;
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? email = prefs.getString(_keyEmail);
+    final String? token = prefs.getString(_keyToken);
+    final String fcmTokenWeb = prefs.getString('FCM_TOKEN_WEB') ?? "";
+
+    if (email == null || token == null || fcmTokenWeb.isEmpty) {
+      _debugLog(
+        "⚠️ [AUTH-WEB] Sincronização de push ignorada por falta de sessão/token web.",
+      );
+      return false;
+    }
+
+    final Map<String, dynamic> resultado = await autenticarNoServidor(
+      email,
+      token,
+      incluirTokensPush: true,
+    );
+
+    final bool sucesso = resultado["sucesso"] == true;
+    _debugLog(
+      sucesso
+          ? "✅ [AUTH-WEB] Token push web sincronizado com a sessão autorizada."
+          : "⛔ [AUTH-WEB] Falha ao sincronizar token push web: ${resultado["mensagem"]}",
+    );
+    return sucesso;
+  }
+
+  /// Remove o acesso do dispositivo localmente, limpa o cache e tenta notificar o servidor.
   Future<bool> logout() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String deviceId = await getDeviceId();
@@ -211,14 +278,20 @@ class AuthService {
       final String? serverUrl = config?.gasUrl;
 
       if (serverUrl != null) {
-        final String bodyData = jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId});
+        final String bodyData = jsonEncode({
+          "action": "REMOVE_DEVICE",
+          "deviceId": deviceId,
+        });
 
         if (kIsWeb) {
-          await http.post(Uri.parse(serverUrl), body: bodyData).timeout(const Duration(seconds: 10));
+          await http
+              .post(Uri.parse(serverUrl), body: bodyData)
+              .timeout(const Duration(seconds: 10));
         } else {
-          final http.Request request = http.Request('POST', Uri.parse(serverUrl))
-            ..followRedirects = false
-            ..body = bodyData;
+          final http.Request request =
+              http.Request('POST', Uri.parse(serverUrl))
+                ..followRedirects = false
+                ..body = bodyData;
 
           await request.send().timeout(const Duration(seconds: 10));
         }
@@ -238,8 +311,10 @@ class AuthService {
     // 🚀 A MÁGICA AQUI: Destruindo o cache de voos para não deixar rastros!
     await prefs.remove('ALERTS_CACHE_V2');
     await prefs.remove('CACHE_DATE_V2');
-    
-    _debugLog("🗑️ [AUTH] Cache de alertas e credenciais destruídos com sucesso.");
+
+    _debugLog(
+      "🗑️ [AUTH] Cache de alertas e credenciais destruídos com sucesso.",
+    );
 
     return true;
   }
@@ -252,14 +327,18 @@ class AuthService {
       final String? serverUrl = config?.gasUrl;
 
       if (serverUrl != null) {
-        final String bodyData = jsonEncode({"action": "REMOVE_DEVICE", "deviceId": deviceId});
+        final String bodyData = jsonEncode({
+          "action": "REMOVE_DEVICE",
+          "deviceId": deviceId,
+        });
 
         if (kIsWeb) {
           http.post(Uri.parse(serverUrl), body: bodyData);
         } else {
-          final http.Request request = http.Request('POST', Uri.parse(serverUrl))
-            ..followRedirects = false
-            ..body = bodyData;
+          final http.Request request =
+              http.Request('POST', Uri.parse(serverUrl))
+                ..followRedirects = false
+                ..body = bodyData;
           request.send();
         }
         _debugLog("🌐 Sessão encerrada de forma silenciosa.");
