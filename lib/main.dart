@@ -2020,12 +2020,22 @@ class _AlertsScreenState extends State<AlertsScreen>
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, index) => Center(child: chips[index]),
+      // 🚀 UX VIP: Força o Flutter a aceitar o Mouse como se fosse Touch
+      child: ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {
+            PointerDeviceKind.touch,
+            PointerDeviceKind.mouse, // 👈 A mágica acontece aqui!
+            PointerDeviceKind.trackpad,
+          },
+        ),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: chips.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, index) => Center(child: chips[index]),
+        ),
       ),
     );
   }
@@ -2048,7 +2058,7 @@ class _AlertsScreenState extends State<AlertsScreen>
       final iata = match.group(0)!;
       final nome = AirportCache.iataToFullName[iata]; // Busca no nosso cache!
       if (nome != null) {
-        tooltipMsg = "🌍 $iata: $nome";
+        tooltipMsg = "🌍 $nome";
       }
     }
 
@@ -2503,37 +2513,37 @@ class _AlertCardState extends State<AlertCard> {
   // 🚀 NOVAS FUNÇÕES DE QoL (Quality of Life)
   // =========================================================================
 
-  /// 🌍 CÉREBRO QoL: Converte "GRU" -> "São Paulo Guarulhos" p/ Leigos
-  String _expandTrechoTooltip(String trechoRaw) {
-    if (trechoRaw == "N/A" || trechoRaw.isEmpty) return "";
+  // /// 🌍 CÉREBRO QoL: Converte "GRU" -> "São Paulo Guarulhos" p/ Leigos
+  // String _expandTrechoTooltip(String trechoRaw) {
+  //   if (trechoRaw == "N/A" || trechoRaw.isEmpty) return "";
 
-    RegExp iataRegExp = RegExp(r'\b\w{3}\b');
-    Iterable<Match> matches = iataRegExp.allMatches(trechoRaw);
+  //   RegExp iataRegExp = RegExp(r'\b\w{3}\b');
+  //   Iterable<Match> matches = iataRegExp.allMatches(trechoRaw);
 
-    String tooltipText = "";
-    Set<String> iatasFound = {};
+  //   String tooltipText = "";
+  //   Set<String> iatasFound = {};
 
-    for (Match match in matches) {
-      iatasFound.add(match.group(0)!);
-    }
+  //   for (Match match in matches) {
+  //     iatasFound.add(match.group(0)!);
+  //   }
 
-    if (iatasFound.isNotEmpty) {
-      for (int i = 0; i < iatasFound.length; i++) {
-        final String iata = iatasFound.elementAt(i).toUpperCase();
-        final String? fullName = AirportCache.iataToFullName[iata];
+  //   if (iatasFound.isNotEmpty) {
+  //     for (int i = 0; i < iatasFound.length; i++) {
+  //       final String iata = iatasFound.elementAt(i).toUpperCase();
+  //       final String? fullName = AirportCache.iataToFullName[iata];
 
-        if (fullName != null) {
-          tooltipText += "🌍 $iata: $fullName";
-        }
+  //       if (fullName != null) {
+  //         tooltipText += "🌍 $iata: $fullName";
+  //       }
 
-        if (i < iatasFound.length - 1 && tooltipText.isNotEmpty) {
-          tooltipText += "\n";
-        }
-      }
-    }
+  //       if (i < iatasFound.length - 1 && tooltipText.isNotEmpty) {
+  //         tooltipText += "\n";
+  //       }
+  //     }
+  //   }
 
-    return tooltipText;
-  }
+  //   return tooltipText;
+  // }
 
   /// Copia o texto para a área de transferência com feedback tátil e visual
   void _copiarTexto(String texto, String label) {
@@ -2764,7 +2774,7 @@ class _AlertCardState extends State<AlertCard> {
       corPrincipal = const Color(0xFF860232);
       corFundo = const Color(0xFF140108);
     } else {
-      corPrincipal = AppTheme.white;
+      corPrincipal = const Color.fromARGB(255, 192, 190, 190);
       corFundo = AppTheme.black;
     }
 
@@ -2862,33 +2872,15 @@ class _AlertCardState extends State<AlertCard> {
                   onTap: () => _copiarTexto(trechoDisplay, "Trecho"),
                   onLongPress: () => _copiarTexto(trechoDisplay, "Trecho"),
                   // 👇 Substitua a partir daqui! 👇
-                  child: Tooltip(
-                    message: _expandTrechoTooltip(trechoDisplay),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    textStyle: const TextStyle(
+                  child: Text(
+                    trechoDisplay,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
                       color: Colors.white,
-                      fontSize: 13,
                     ),
-                    preferBelow: true,
-                    verticalOffset: 20,
-                    waitDuration: kIsWeb
-                        ? const Duration(milliseconds: 100)
-                        : const Duration(seconds: 1000),
-                    child: Text(
-                      trechoDisplay,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: Colors.white,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   // 👆 Até aqui! 👆
                 ),
