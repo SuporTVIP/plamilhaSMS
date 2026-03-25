@@ -282,12 +282,16 @@ class UserFilters {
           ? _normalizar(partesUsu[1])
           : '';
 
-      final bool bateIata = localVooNorm.contains(iata);
-      final bool bateCidade =
-          cidade.isNotEmpty && localVooNorm.contains(cidade);
+     final bool bateIata = localVooNorm == iata || 
+                            localVooNorm.startsWith('$iata ') || 
+                            localVooNorm.endsWith(' $iata');
+      final bool bateCidade = cidade.isNotEmpty && (
+                                localVooNorm == cidade || 
+                                localVooNorm.contains(' - $cidade') ||
+                                localVooNorm.startsWith('$cidade ')
+                              );
       // 👇 Verifica se a cidade configurada no filtro bate com o nome que achamos no cache
-      final bool bateCidadeAlias =
-          cidade.isNotEmpty &&
+      final bool bateCidadeAlias = cidade.isNotEmpty &&
           cidadeAliasNorm != null &&
           cidadeAliasNorm.contains(cidade);
 

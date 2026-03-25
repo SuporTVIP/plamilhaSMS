@@ -2568,6 +2568,7 @@ class _AlertCardState extends State<AlertCard> {
   }
 
   /// Gera a mensagem de marketing e abre a gaveta nativa do celular
+  /// Gera a mensagem de marketing e abre a gaveta nativa (ou WhatsApp na Web)
   Future<void> _compartilharVoo() async {
     final String valorAgencia = _formatarDecimal(widget.alerta.valorEmissao);
 
@@ -2580,11 +2581,38 @@ class _AlertCardState extends State<AlertCard> {
         "💸 *Milhas:* ${widget.alerta.milhas}\n\n"
         "👉 _Quer receber alertas VIPs? Acesse:_ pramilhasweb.suportvip.com";
 
-    try {
-      await Share.share(texto);
-    } catch (e) {
-      // 🚀 SE O NAVEGADOR WEB NÃO SUPORTAR O COMPARTILHAMENTO, COPIA O TEXTO!
-      _copiarTexto(texto, "Mensagem Promocional");
+    if (kIsWeb) {
+      // 🌐 NA WEB: A gaveta nativa falha. Vamos forçar o WhatsApp Web!
+      final String textoCodificado = Uri.encodeComponent(texto);
+      final Uri whatsappUrl = Uri.parse("https://wa.me/?text=$textoCodificado");
+
+      try {
+        // 🛡️ PLANO B EMBUTIDO: Já copia o texto por segurança antes de abrir a aba
+        await Clipboard.setData(ClipboardData(text: texto));
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Abrindo WhatsApp... O texto também foi copiado!'),
+              backgroundColor: AppTheme.accent,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        // Lança a nova aba do WhatsApp Web
+        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        // Se der erro (ex: bloqueador de pop-up), cai no fallback normal
+        _copiarTexto(texto, "Mensagem Promocional");
+      }
+    } else {
+      // 📱 NO MOBILE: O Share.share abre a gaveta do sistema lindamente (Whats, Insta, Telegram...)
+      try {
+        await Share.share(texto);
+      } catch (e) {
+        _copiarTexto(texto, "Mensagem Promocional");
+      }
     }
   }
 
@@ -3070,7 +3098,6 @@ class _AlertCardState extends State<AlertCard> {
         onTapUp: (_) => onFocusChanged(false),
         onTapCancel: () => onFocusChanged(false),
         onLongPress: () => _copiarTexto(value, label),
-        onTap: () => _copiarTexto(value, label),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Column(
@@ -3910,9 +3937,8 @@ class _LicenseScreenState extends State<LicenseScreen> {
               uri,
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode({
-                'action':
-                    'REMOVE_DEVICE', // 🚀 Bate perfeitamente com o seu GAS
-                'deviceId': _deviceId, // 🚀 A chave exata que o script espera
+                'action': 'REMOVE_DEVICE',
+                'deviceId': _deviceId,
               }),
             )
             .timeout(const Duration(seconds: 5));
@@ -3921,7 +3947,6 @@ class _LicenseScreenState extends State<LicenseScreen> {
         );
       }
     } catch (e) {
-      // Se o erro for de Fetch (CORS do GAS), nós ignoramos porque sabemos que o GAS executou no fundo.
       if (e.toString().contains('Failed to fetch')) {
         debugPrint(
           "🧹 [GAS] Planilha avisada do Logoff (CORS ignorado). Vaga liberada!",
@@ -3931,13 +3956,16 @@ class _LicenseScreenState extends State<LicenseScreen> {
       }
     }
 
-    // 3. Limpa os dados de usuário locais do aparelho
+    // 3. Limpa os dados de usuário locais do aparelho (Obrigatório dar await aqui!)
     await _auth.logout();
 
+    // 4. SÓ DEPOIS de apagar tudo, manda pra Splash Screen!
     if (mounted) {
-      Navigator.pushReplacement(
+      // Usa pushAndRemoveUntil para DESTRUIR a pilha de telas inteira!
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute<void>(builder: (_) => const SplashRouter()),
+        (Route<dynamic> route) => false, // 🔥 Remove todas as rotas anteriores!
       );
     }
   }

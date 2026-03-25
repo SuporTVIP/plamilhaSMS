@@ -131,21 +131,23 @@ class _LoginScreenState extends State<LoginScreen> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildLogo(),
-              const SizedBox(height: 40),
-              _buildSecurityIndicator(),
-              const SizedBox(height: 30),
-              _buildEmailField(),
-              const SizedBox(height: 16),
-              _buildTokenField(),
-              const SizedBox(height: 40),
-              _buildSubmitButton(),
-              const SizedBox(height: 24), // Espaçamento
-              _buildNoAccessButton(), // 🚀 O NOVO BOTÃO AQUI
-            ],
+          child: AutofillGroup(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildLogo(),
+                const SizedBox(height: 40),
+                _buildSecurityIndicator(),
+                const SizedBox(height: 30),
+                _buildEmailField(),
+                const SizedBox(height: 16),
+                _buildTokenField(),
+                const SizedBox(height: 40),
+                _buildSubmitButton(),
+                const SizedBox(height: 24), // Espaçamento
+                _buildNoAccessButton(), // 🚀 O NOVO BOTÃO AQUI
+              ],
+            ),
           ),
         ),
       ),
@@ -246,6 +248,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildEmailField() {
     return TextField(
       controller: _emailController,
+      autofillHints: const [
+        AutofillHints.email,
+        AutofillHints.username,
+      ], // 🚀 DICA PRO NAVEGADOR
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
         labelText: "E-mail de Destino",
@@ -270,6 +276,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildTokenField() {
     return TextField(
       controller: _tokenController,
+      obscureText: true, // 🚀 TRANSFORMA EM SENHA (BOLINHAS)
+      autofillHints: const [AutofillHints.password], // 🚀 DICA PRO NAVEGADOR
       style: const TextStyle(
         color: Colors.white,
         letterSpacing: 2,
@@ -300,7 +308,10 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
       textInputAction: TextInputAction.done,
-      onSubmitted: (_) => _ativarSistema(),
+      onSubmitted: (_) {
+        TextInput.finishAutofillContext(); // 🚀 GATILHO SE DER ENTER NO TECLADO
+        _ativarSistema();
+      },
     );
   }
 
@@ -318,7 +329,13 @@ class _LoginScreenState extends State<LoginScreen> {
           elevation: 10,
           shadowColor: AppTheme.accent.withOpacity(0.3),
         ),
-        onPressed: _isLoading ? null : _ativarSistema,
+        onPressed: _isLoading
+            ? null
+            : () {
+                // 🚀 GATILHO MAGNÉTICO PARA O NAVEGADOR!
+                TextInput.finishAutofillContext();
+                _ativarSistema();
+              },
         child: _isLoading
             ? const SizedBox(
                 width: 24,
