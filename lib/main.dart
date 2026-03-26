@@ -4363,12 +4363,15 @@ E-mail: $emailAtual
         children: [
           _buildInfoRow("USUÁRIO", _userUsuario, valueColor: Colors.white),
           const Divider(color: AppTheme.border, height: 30),
+
+          // 🚀 AQUI ESTÁ A MUDANÇA: Substituímos o token pela nossa "Licença Fantasia"
           _buildInfoRow(
-            "LICENÇA",
-            _userToken.toUpperCase(),
+            "TIPO DE LICENÇA",
+            _userVencimento == "N/A" ? "BÁSICA (Pendente)" : "VIP PREMIUM",
             valueColor: AppTheme.accent,
             isMono: true,
           ),
+
           const Divider(color: AppTheme.border, height: 30),
           _buildInfoRow(
             "VÁLIDA ATÉ",

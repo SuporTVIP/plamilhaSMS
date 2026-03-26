@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart'; // 🚀 Novo import
+import 'package:url_launcher/url_launcher.dart';
 import 'core/theme.dart';
 import 'services/auth_service.dart';
-import 'services/discovery_service.dart'; // 🚀 Novo import
+import 'services/discovery_service.dart';
 import 'main.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -17,7 +17,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _tokenController = TextEditingController();
   final AuthService _auth = AuthService();
+
   bool _isLoading = false;
+  bool _obscurePassword = true; // 🚀 Controle do olhinho da senha
 
   @override
   void initState() {
@@ -56,24 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       debugPrint("Erro ao abrir link de vendas: $e");
-    }
-  }
-
-  Future<void> _colarDoClipboard(TextEditingController controller) async {
-    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data != null && data.text != null) {
-      setState(() {
-        controller.text = data.text!;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Texto colado com sucesso!"),
-            backgroundColor: AppTheme.green,
-            duration: Duration(seconds: 1),
-          ),
-        );
-      }
     }
   }
 
@@ -144,8 +128,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 _buildTokenField(),
                 const SizedBox(height: 40),
                 _buildSubmitButton(),
-                const SizedBox(height: 24), // Espaçamento
-                _buildNoAccessButton(), // 🚀 O NOVO BOTÃO AQUI
+                const SizedBox(height: 24),
+                _buildNoAccessButton(),
               ],
             ),
           ),
@@ -154,7 +138,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // 🚀 Botão para quem ainda não é VIP
   Widget _buildNoAccessButton() {
     return TextButton(
       onPressed: _abrirSiteVendas,
@@ -248,10 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildEmailField() {
     return TextField(
       controller: _emailController,
-      autofillHints: const [
-        AutofillHints.email,
-        AutofillHints.username,
-      ], // 🚀 DICA PRO NAVEGADOR
+      autofillHints: const [AutofillHints.email, AutofillHints.username],
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: InputDecoration(
         labelText: "E-mail de Destino",
@@ -276,8 +256,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildTokenField() {
     return TextField(
       controller: _tokenController,
-      obscureText: true, // 🚀 TRANSFORMA EM SENHA (BOLINHAS)
-      autofillHints: const [AutofillHints.password], // 🚀 DICA PRO NAVEGADOR
+      obscureText: _obscurePassword, // 🚀 Usa o estado dinâmico
+      autofillHints: const [AutofillHints.password],
       style: const TextStyle(
         color: Colors.white,
         letterSpacing: 2,
@@ -290,13 +270,18 @@ class _LoginScreenState extends State<LoginScreen> {
         fillColor: AppTheme.card,
         prefixIcon: const Icon(Icons.key, color: AppTheme.muted, size: 20),
         suffixIcon: IconButton(
-          icon: const Icon(
-            Icons.content_paste,
+          icon: Icon(
+            _obscurePassword ? Icons.visibility : Icons.visibility_off,
             color: AppTheme.accent,
             size: 20,
           ),
-          tooltip: "Colar Licença",
-          onPressed: () => _colarDoClipboard(_tokenController),
+          tooltip: _obscurePassword ? "Mostrar Senha" : "Ocultar Senha",
+          onPressed: () {
+            // 🚀 Inverte o estado e atualiza a UI
+            setState(() {
+              _obscurePassword = !_obscurePassword;
+            });
+          },
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -309,7 +294,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       textInputAction: TextInputAction.done,
       onSubmitted: (_) {
-        TextInput.finishAutofillContext(); // 🚀 GATILHO SE DER ENTER NO TECLADO
+        TextInput.finishAutofillContext();
         _ativarSistema();
       },
     );
@@ -332,7 +317,6 @@ class _LoginScreenState extends State<LoginScreen> {
         onPressed: _isLoading
             ? null
             : () {
-                // 🚀 GATILHO MAGNÉTICO PARA O NAVEGADOR!
                 TextInput.finishAutofillContext();
                 _ativarSistema();
               },
