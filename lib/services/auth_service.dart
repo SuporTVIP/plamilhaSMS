@@ -30,6 +30,8 @@ class AuthService {
   static const String _keyIdPlanilha = "USER_ID_PLANILHA";
   static const String _keyLastEmail = "LAST_LOGGED_EMAIL";
   static const String _keyLastToken = "LAST_LOGGED_TOKEN";
+  static const String _keyFcmTokenMobile = "FCM_TOKEN_MOBILE";
+  static const String _keyFcmTokenWeb = "FCM_TOKEN_WEB";
 
   // Dependências
   final DiscoveryService _discovery = DiscoveryService();
@@ -156,7 +158,7 @@ class AuthService {
     final String deviceId = await getDeviceId();
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String fcmTokenWeb = incluirTokensPush
-        ? prefs.getString('FCM_TOKEN_WEB') ?? ""
+        ? prefs.getString(_keyFcmTokenWeb) ?? ""
         : "";
     final String fcmToken = incluirTokensPush ? await _obterFcmToken() : "";
 
@@ -244,7 +246,7 @@ class AuthService {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? email = prefs.getString(_keyEmail);
     final String? token = prefs.getString(_keyToken);
-    final String fcmTokenWeb = prefs.getString('FCM_TOKEN_WEB') ?? "";
+    final String fcmTokenWeb = prefs.getString(_keyFcmTokenWeb) ?? "";
 
     if (email == null || token == null || fcmTokenWeb.isEmpty) {
       _debugLog(
@@ -264,6 +266,69 @@ class AuthService {
       sucesso
           ? "✅ [AUTH-WEB] Token push web sincronizado com a sessão autorizada."
           : "⛔ [AUTH-WEB] Falha ao sincronizar token push web: ${resultado["mensagem"]}",
+    );
+    return sucesso;
+  }
+
+  Future<bool> sincronizarTokenPushAutorizadoAtual() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? email = prefs.getString(_keyEmail);
+    final String? token = prefs.getString(_keyToken);
+
+    if (email == null || token == null) {
+      _debugLog("[AUTH-PUSH] Sincronizacao ignorada por falta de sessao ativa.");
+      return false;
+    }
+
+    final Map<String, dynamic> resultado = await autenticarNoServidor(
+      email,
+      token,
+      incluirTokensPush: true,
+    );
+
+    final bool sucesso = resultado["sucesso"] == true;
+    _debugLog(
+      sucesso
+          ? "[AUTH-PUSH] Token push sincronizado com sucesso."
+          : "[AUTH-PUSH] Falha ao sincronizar token push: ${resultado["mensagem"]}",
+    );
+    return sucesso;
+  }
+
+  Future<bool> sincronizarTokenPushAutorizado() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? email = prefs.getString(_keyEmail);
+    final String? token = prefs.getString(_keyToken);
+
+    if (email == null || token == null) {
+      _debugLog(
+        "⚠️ [AUTH-PUSH] Sincronização ignorada por falta de sessão ativa.",
+      );
+      return false;
+    }
+
+    final String tokenLocal = kIsWeb
+        ? prefs.getString(_keyFcmTokenWeb) ?? ""
+        : prefs.getString(_keyFcmTokenMobile) ?? "";
+
+    if (tokenLocal.isEmpty) {
+      _debugLog(
+        "⚠️ [AUTH-PUSH] Sincronização ignorada porque o token local está vazio.",
+      );
+      return false;
+    }
+
+    final Map<String, dynamic> resultado = await autenticarNoServidor(
+      email,
+      token,
+      incluirTokensPush: true,
+    );
+
+    final bool sucesso = resultado["sucesso"] == true;
+    _debugLog(
+      sucesso
+          ? "✅ [AUTH-PUSH] Token push sincronizado com a sessão autorizada."
+          : "⛔ [AUTH-PUSH] Falha ao sincronizar token push: ${resultado["mensagem"]}",
     );
     return sucesso;
   }

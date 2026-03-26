@@ -33,6 +33,34 @@ import 'widgets/consentimento_dialog.dart';
 // Instância global de Notificações
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
+const String _fcmTokenMobilePrefsKey = 'FCM_TOKEN_MOBILE';
+
+Future<void> _sincronizarTokenPushMobileAtual() async {
+  if (kIsWeb) return;
+
+  try {
+    final FirebaseMessaging messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission();
+
+    final String? token = await messaging.getToken();
+    if (token == null || token.isEmpty) {
+      debugPrint('[PUSH] Token FCM mobile indisponivel para sincronizacao.');
+      return;
+    }
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String tokenAnterior = prefs.getString(_fcmTokenMobilePrefsKey) ?? '';
+    await prefs.setString(_fcmTokenMobilePrefsKey, token);
+
+    if (tokenAnterior != token) {
+      debugPrint('[PUSH] Token FCM mobile atualizado localmente.');
+    }
+
+    await AuthService().sincronizarTokenPushAutorizadoAtual();
+  } catch (e) {
+    debugPrint('[PUSH] Falha ao sincronizar token mobile atual: $e');
+  }
+}
 
 /// Handler de mensagens do Firebase (Push Oculto) - ARQUITETURA 100% PUSH.
 ///
@@ -230,6 +258,12 @@ void main() async {
   } else {
     await Firebase.initializeApp();
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    FirebaseMessaging.instance.onTokenRefresh.listen((String token) async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_fcmTokenMobilePrefsKey, token);
+      debugPrint('[PUSH] onTokenRefresh recebeu um novo token mobile.');
+      await AuthService().sincronizarTokenPushAutorizadoAtual();
+    });
   }
 
   // Notificações locais (só mobile)
@@ -302,6 +336,8 @@ void main() async {
         }
       });
     });
+  } else {
+    unawaited(_sincronizarTokenPushMobileAtual());
   }
 }
 
@@ -949,6 +985,8 @@ class _MainNavigatorState extends State<MainNavigator>
     if (status == AuthStatus.autorizado) {
       if (kIsWeb) {
         await _configurarPushWeb(sincronizarComServidor: true);
+      } else {
+        unawaited(_sincronizarTokenPushMobileAtual());
       }
       return;
     }

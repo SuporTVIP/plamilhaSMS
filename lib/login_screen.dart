@@ -284,7 +284,7 @@ class _LoginScreenState extends State<LoginScreen> {
         fontSize: 14,
       ),
       decoration: InputDecoration(
-        labelText: "Chave de Licença",
+        labelText: "SENHA",
         labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
         filled: true,
         fillColor: AppTheme.card,
