@@ -20,6 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'core/theme.dart';
+import 'core/airline_colors.dart';
 import 'login_screen.dart';
 import 'models/alert.dart';
 import 'services/alert_service.dart';
@@ -164,26 +165,23 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // =====================================================================
   // 🚀 PASSO 4: EXIBIÇÃO DA NOTIFICAÇÃO NATIVO
   // =====================================================================
-
   debugPrint(
     "🔔 [FCM-UX] Disparando Sirene Dourada e Notificação visual do Android...",
   );
   try {
-    const AndroidInitializationSettings initAndroid =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
-    await flutterLocalNotificationsPlugin.initialize(
-      settings: const InitializationSettings(android: initAndroid),
+    final localNotif = FlutterLocalNotificationsPlugin();
+
+    await localNotif.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+      ),
     );
 
-    final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
-        flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
+final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v5',
+        'emissao_vip_v7',
         'Alertas Sonoros VIP',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -192,45 +190,50 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       ),
     );
 
-    // 🔕 Canal Silencioso (Obrigatório registrar para o Cooldown funcionar)
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v5_silent', // Novo ID
+        'emissao_vip_v7_silent',
         'Alertas Silenciosos (Cooldown)',
-        importance: Importance.low, // 🚀 LOW garante que não faz som nem vibra
+        importance: Importance.low,
         playSound: false,
         enableVibration: false,
       ),
     );
 
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
-    final String statusSom = somAtivo ? "🔊 SONORA" : "🔕 SILENCIOSA";
-    final String idCanal = somAtivo
-        ? 'emissao_vip_v5'
-        : 'emissao_vip_v5_silent';
+    final String idCanalReal = somAtivo
+        ? 'emissao_vip_v7'
+        : 'emissao_vip_v7_silent';
+
     debugPrint(
-      "🔔 [FCM-UX] Preparando Notificação $statusSom via canal: $idCanal",
+      "🔔 [FCM-UX] Preparando Notificação ${somAtivo ? '🔊 SONORA' : '🔕 SILENCIOSA'} via canal: $idCanalReal",
     );
 
-    await flutterLocalNotificationsPlugin.show(
+    final Color corNotificacao = AirlineColors.getPrincipal(programa);
+
+    await localNotif.show(
       id: novoAlerta.id.hashCode,
       title: "✈️ Oportunidade: $programa",
       body: trecho,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          idCanal,
+          idCanalReal,
           'Emissões FãMilhasVIP',
+          channelDescription: 'Alertas Sonoros de Alta Prioridade',
           importance: somAtivo ? Importance.max : Importance.high,
           priority: Priority.high,
+          ticker: 'ticker',
           sound: somAtivo
               ? const RawResourceAndroidNotificationSound('alerta')
               : null,
           playSound: somAtivo,
+          enableVibration: somAtivo,
+          color: corNotificacao,
         ),
       ),
-      payload:
-          novoAlerta.id, // 🚀 Use o ID para o blur dourado funcionar sempre
+      payload: novoAlerta.id,
     );
+
     debugPrint(
       "✨ [FCM-UX] Notificação (${somAtivo ? 'SONORA' : 'MUDA'}) exibida!",
     );
@@ -286,15 +289,11 @@ void main() async {
     // Cria o canal AQUI, na thread principal, antes do runApp.
     // Android 13+ pode descartar notificações silenciosamente se o canal
     // for criado apenas no isolate do background handler.
-    final AndroidFlutterLocalNotificationsPlugin? androidPlugin =
-        flutterLocalNotificationsPlugin
-            .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin
-            >();
+    final androidPlugin = flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v5',
+        'emissao_vip_v7',
         'Alertas Sonoros',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -306,7 +305,7 @@ void main() async {
     // 🔕 CANAL SILENCIOSO (Novo ID)
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v5_silent', // ID Diferente
+        'emissao_vip_v7_silent', // ID Diferente
         'Alertas Silenciosos',
         importance: Importance.low,
         playSound: false,
@@ -835,7 +834,7 @@ class _MainNavigatorState extends State<MainNavigator>
       body: corpo,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          somAtivo ? 'emissao_vip_v5' : 'emissao_vip_v5_silent',
+          somAtivo ? 'emissao_vip_v7' : 'emissao_vip_v7_silent',
           'Emissões FãMilhasVIP',
           importance: somAtivo ? Importance.max : Importance.low,
           priority: Priority.high,
@@ -2699,10 +2698,12 @@ class _AlertCardState extends State<AlertCard> {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (_) {
-      if (mounted)
+      if (mounted) {
+        // 👈 Abre chave aqui
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Não foi possível abrir o link.")),
         );
+      } // 👈 Fecha chave aqui
     }
   }
 
@@ -2735,13 +2736,15 @@ class _AlertCardState extends State<AlertCard> {
             : LaunchMode.externalApplication,
       );
     } catch (e) {
-      if (mounted)
+      if (mounted) {
+        // 👈 Abre chave aqui
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Erro ao abrir WhatsApp: $e"),
             backgroundColor: AppTheme.red,
           ),
         );
+      } // 👈 Fecha chave aqui
     }
   }
 
@@ -2759,12 +2762,14 @@ class _AlertCardState extends State<AlertCard> {
         await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
+        // 👈 Abre chave aqui
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Não foi possível abrir o link da agência."),
           ),
         );
+      } // 👈 Fecha chave aqui
     }
   }
 
@@ -2789,37 +2794,11 @@ class _AlertCardState extends State<AlertCard> {
   @override
   Widget build(BuildContext context) {
     final String prog = widget.alerta.programa.toUpperCase();
-    Color corPrincipal = AppTheme.accent;
-    Color corFundo = AppTheme.card;
 
-    if (prog.contains("AZUL")) {
-      corPrincipal = const Color(0xFF38BDF8);
-      corFundo = const Color(0xFF0C1927);
-    } else if (prog.contains("LATAM")) {
-      corPrincipal = const Color(0xFFF43F5E);
-      corFundo = const Color(0xFF230D14);
-    } else if (prog.contains("SMILES")) {
-      corPrincipal = const Color(0xFFF59E0B);
-      corFundo = const Color(0xFF22160A);
-    } else if (prog.contains("TAP")) {
-      corPrincipal = const Color(0xFF2DD4BF);
-      corFundo = const Color(0xFF0A1F1C);
-    } else if (prog.contains("IBERIA") || prog.contains("IBÉRIA")) {
-      corPrincipal = const Color(0xFFD30000);
-      corFundo = const Color(0xFF1A0505);
-    } else if (prog.contains("AADVANTAGE")) {
-      corPrincipal = const Color(0xFF0078D2);
-      corFundo = const Color(0xFF0B172A);
-    } else if (prog.contains("GOL")) {
-      corPrincipal = const Color(0xFFFF5C00);
-      corFundo = const Color(0xFF140800);
-    } else if (prog.contains("QATAR")) {
-      corPrincipal = const Color(0xFF860232);
-      corFundo = const Color(0xFF140108);
-    } else {
-      corPrincipal = const Color.fromARGB(255, 192, 190, 190);
-      corFundo = AppTheme.black;
-    }
+    final Color corPrincipal = AirlineColors.getPrincipal(
+      widget.alerta.programa,
+    );
+    final Color corFundo = AirlineColors.getFundo(widget.alerta.programa);
 
     final BoxShadow blurDourado = widget.isHighlighted
         ? const BoxShadow(
