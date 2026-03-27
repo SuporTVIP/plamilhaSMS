@@ -4,7 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'discovery_service.dart';
+//import 'discovery_service.dart';
 
 /// Define o status da tentativa de autenticação do dispositivo.
 enum AuthStatus { autorizado, bloqueado, erroRede }
@@ -26,10 +26,10 @@ class AuthService {
   static const String _keyIdPlanilha = "USER_ID_PLANILHA";
   static const String _keyLastEmail = "LAST_LOGGED_EMAIL";
   static const String _keyLastToken = "LAST_LOGGED_TOKEN";
-  static const String _keyFcmTokenMobile = "FCM_TOKEN_MOBILE";
+  //static const String _keyFcmTokenMobile = "FCM_TOKEN_MOBILE";
   static const String _keyFcmTokenWeb = "FCM_TOKEN_WEB";
 
-  final DiscoveryService _discovery = DiscoveryService();
+  //final DiscoveryService _discovery = DiscoveryService();
 
   Future<String> getDeviceId() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();

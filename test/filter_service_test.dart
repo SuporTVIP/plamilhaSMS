@@ -5,8 +5,8 @@ import 'package:PlamilhaSVIP/services/filter_service.dart';
 
 void prepararCacheParaTeste() {
   // Limpa qualquer sujeira de testes anteriores
-  AirportCache.iataToFullName.clear(); 
-  
+  AirportCache.iataToFullName.clear();
+
   // "Ensina" o cache com os aeroportos que os testes vão usar
   AirportCache.iataToFullName['GIG'] = 'Rio de Janeiro Galeao';
   AirportCache.iataToFullName['SDU'] = 'Rio de Janeiro Santos Dumont';
@@ -15,7 +15,8 @@ void prepararCacheParaTeste() {
 }
 
 void main() {
-  prepararCacheParaTeste();
+  setUp(prepararCacheParaTeste);
+
   group('UserFilters - companhia aerea', () {
     test('bloqueia LATAM quando latamAtivo estiver desligado', () {
       final UserFilters filtros = UserFilters(latamAtivo: false);
@@ -202,6 +203,85 @@ void main() {
         azulAtivo: true,
         origens: const ['RECIFE - Recife'],
         destinos: const ['RIBEIRAO PRETO - Ribeirao Preto'],
+      );
+
+      expect(filtros.alertaPassaNoFiltro(alerta), isTrue);
+    });
+  });
+
+  group('UserFilters - filtros regionais', () {
+    test('ignora o sufixo de regiao e casa por IATA', () {
+      final UserFilters filtros = UserFilters(
+        destinos: const ['GIG - Rio de Janeiro - SUDESTE'],
+      );
+
+      final bool resultado = filtros.passaNoFiltroBasico('LATAM', 'GRU-GIG');
+
+      expect(resultado, isTrue);
+    });
+
+    test('ignora o sufixo de regiao e casa por cidade via alias dinamico', () {
+      final UserFilters filtros = UserFilters(
+        destinos: const ['SDU - Rio de Janeiro - SUDESTE'],
+      );
+
+      final bool resultado = filtros.passaNoFiltroBasico('LATAM', 'GRU-GIG');
+
+      expect(resultado, isTrue);
+    });
+
+    test('aprova quando a regiao adicionou varios aeroportos validos', () {
+      final UserFilters filtros = UserFilters(
+        origens: const [
+          'GRU - Sao Paulo - SUDESTE',
+          'CGH - Sao Paulo - SUDESTE',
+        ],
+      );
+
+      expect(filtros.passaNoFiltroBasico('LATAM', 'GRU-GIG'), isTrue);
+      expect(filtros.passaNoFiltroBasico('LATAM', 'CGH-GIG'), isTrue);
+    });
+
+    test(
+      'nao gera falso positivo so por compartilhar outro sufixo regional',
+      () {
+        final UserFilters filtros = UserFilters(
+          destinos: const ['BEL - Belem - NORTE'],
+        );
+
+        final bool resultado = filtros.passaNoFiltroBasico('LATAM', 'GRU-GIG');
+
+        expect(resultado, isFalse);
+      },
+    );
+
+    test('funciona com trecho em cidade completa e filtro salvo com regiao', () {
+      final Alert alerta = _alertaDeMetadados(
+        id: '20260324151240298_AZUL_RECIFE_RIBEIRAO_PRETO',
+        programa: 'AZUL',
+        trecho: 'RECIFE - RIBEIR\u00C3O PRETO',
+        detalhes:
+            'Disponibilidades - IDA\nJunho: 14\n\nDisponibilidades - VOLTA \nJunho: 21',
+      );
+      final UserFilters filtros = UserFilters(
+        origens: const ['REC - Recife - NORDESTE'],
+        destinos: const ['RAO - Ribeirao Preto - SUDESTE'],
+      );
+
+      expect(filtros.alertaPassaNoFiltro(alerta), isTrue);
+    });
+
+    test('funciona com volta usando filtros salvos por regiao', () {
+      final Alert alerta = _alertaDeMetadados(
+        id: '20260324151240298_AZUL_RECIFE_RIBEIRAO_PRETO',
+        programa: 'AZUL',
+        trecho: 'RIBEIR\u00C3O PRETO - RECIFE',
+        detalhes:
+            'Disponibilidades - IDA\nJunho: 14\n\nDisponibilidades - VOLTA \nJunho: 21',
+      );
+      final UserFilters filtros = UserFilters(
+        origens: const ['REC - Recife - NORDESTE'],
+        destinos: const ['RAO - Ribeirao Preto - SUDESTE'],
       );
 
       expect(filtros.alertaPassaNoFiltro(alerta), isTrue);

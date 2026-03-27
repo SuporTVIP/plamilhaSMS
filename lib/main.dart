@@ -823,6 +823,11 @@ class _MainNavigatorState extends State<MainNavigator>
     // Se o usuário desligou geral OU se o sistema de cooldown mandou calar a boca:
     final bool somAtivo =
         (prefs.getBool('SOUND_ENABLED') ?? true) && !forcarSilencioso;
+    if (forcarSilencioso) {
+      debugPrint(
+        "🤫 [LOCAL-NOTIFY] Cooldown ativado: Notificação $idNotificacao silenciada com sucesso.",
+      );
+    }
 
     await flutterLocalNotificationsPlugin.show(
       id: idNotificacao,
