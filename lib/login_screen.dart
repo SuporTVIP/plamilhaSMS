@@ -179,7 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
             fontFamily: 'Inter',
             fontSize: 40,
             fontWeight: FontWeight.w900,
-            color: Colors.white,
+            color:AppTheme.black,
             shadows: [
               Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20),
             ],
@@ -232,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return TextField(
       controller: _emailController,
       autofillHints: const [AutofillHints.email, AutofillHints.username],
-      style: const TextStyle(color: Colors.white, fontSize: 14),
+      style: const TextStyle(color: AppTheme.text, fontSize: 14),
       decoration: InputDecoration(
         labelText: "E-mail de Destino",
         labelStyle: const TextStyle(color: AppTheme.muted, fontSize: 12),
@@ -259,7 +259,7 @@ class _LoginScreenState extends State<LoginScreen> {
       obscureText: _obscurePassword, // 🚀 Usa o estado dinâmico
       autofillHints: const [AutofillHints.password],
       style: const TextStyle(
-        color: Colors.white,
+        color: AppTheme.text,
         letterSpacing: 2,
         fontSize: 14,
       ),

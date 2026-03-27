@@ -1,55 +1,75 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-/// Define a identidade visual do aplicativo (Branding e Design System).
-///
-/// Analogia: Funciona como um arquivo CSS global no Web ou um arquivo de recursos XAML no WPF/W32.
-/// Centralizamos todas as cores e fontes aqui para facilitar mudanças globais.
 class AppTheme {
-  // Paleta de cores extraída do design original.
-  // Usamos hexadecimal 0xFF seguido do código da cor (ex: 3B82F6).
-  static const Color bg = Color(0xFF060A12);
-  static const Color surface = Color(0xFF0D1320);
-  static const Color card = Color(0xFF111A2B);
-  static const Color border = Color(0xFF1C2940);
-  static const Color accent = Color(0xFF3B82F6);
-  static const Color green = Color(0xFF10B981);
-  static const Color red = Color(0xFFEF4444);
-  static const Color text = Color(0xFFE5E9F0);
-  static const Color muted = Color(0xFF6B8099);
-  static const Color yellow = Color(0xFFF59E0B);
-  static const Color golden = Color(0xFFFBBF24);
-  static const Color esmerald = Color(0xFF059669);
-  static const Color white = Color(0xFFFFFFFF);
-  static const Color amber = Color(0xFFFFC107);
+  // ===========================================================================
+  // 1. CORES PRINCIPAIS (IDENTIDADE DA MARCA)
+  // ===========================================================================
+
+  /// Roxo Elétrico (#6A00FF) - Cor principal, botões, ícones ativos
+  static const Color accent = Color(0xFF6A00FF);
+
+  /// Roxo Brilhante (#8B2FF7) - Fim do gradiente, detalhes luminosos
+  static const Color brightPurple = Color(0xFF8B2FF7);
+
+  /// Lilás Pastel (#E8E0FF) - Bordas, trilhas e botões secundários
+  static const Color lightPurple = Color(0xFFE8E0FF);
+
+  /// Lilás Super Claro (#F3E8FF) - Fundo de ícones em repouso
+  static const Color palePurple = Color(0xFFF3E8FF);
+
+  // ===========================================================================
+  // 2. CORES DE FUNDO (BACKGROUNDS - LIGHT MODE)
+  // ===========================================================================
+
+  /// Branco Gelo com toque Roxo (#F8F5FF) - Fundo geral do App (Body)
+  static const Color bg = Color(0xFFF8F5FF);
+
+  /// Branco Puro (#FFFFFF) - Fundo dos Cards, Painéis e Inputs
+  static const Color card = Color(0xFFFFFFFF);
+  static const Color surface = Color(
+    0xFFFFFFFF,
+  ); // Mesma coisa que card no Light Theme
+
+  /// Lilás Pastel (#E8E0FF) - Usado para bordas e separadores limpos
+  static const Color border = Color(0xFFE8E0FF);
+
+  // ===========================================================================
+  // 3. CORES DE TEXTO (TIPOGRAFIA)
+  // ===========================================================================
+
+  /// Preto Absoluto (#000000) - Títulos Fortes (H1, H2)
   static const Color black = Color(0xFF000000);
 
-  /// Retorna as configurações de tema Escuro (Dark Mode).
-  static ThemeData get darkTheme {
-    return ThemeData(
-      useMaterial3: true, // Habilita o design system mais moderno do Google (Material 3)
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: bg,
-      primaryColor: accent,
-      
-      // Tipografia: Usamos a fonte 'IBM Plex Mono' para dar um ar técnico/terminal.
-      // Analogia: Similar a definir a font-family no body do CSS.
-      textTheme: GoogleFonts.ibmPlexMonoTextTheme().apply(
-        bodyColor: text,
-        displayColor: text,
-      ),
+  /// Cinza Muito Escuro (#333333) - Texto principal (Body)
+  static const Color text = Color(0xFF333333);
 
-      // Configuração global para as Barras de Título (AppBars)
-      appBarTheme: const AppBarTheme(
-        backgroundColor: surface,
-        elevation: 0,
-        centerTitle: true,
-        titleTextStyle: TextStyle(
-          color: text, 
-          fontWeight: FontWeight.bold, 
-          fontSize: 18
-        ),
-      ),
-    );
-  }
+  /// Cinza Médio (#666666) - Subtítulos e explicações
+  static const Color muted = Color(0xFF666666);
+
+  // ===========================================================================
+  // 4. CORES UTILITÁRIAS / SUPORTE
+  // ===========================================================================
+
+  /// Verde Esmeralda (#10B981) - Sucesso, Liberado, Ativo
+  static const Color green = Color(0xFF10B981);
+  static const Color esmerald = Color(0xFF10B981); // Alias
+
+  /// Vermelho Suave (#EF4444) - Alertas, Erros, Bloqueado (Manteve padrão Flutter)
+  static const Color red = Color(0xFFEF4444);
+
+  /// Amarelo Ouro (#F59E0B) - Alertas Médios, Pendentes
+  static const Color yellow = Color(0xFFF59E0B);
+  static const Color golden = Color(0xFFF59E0B); // Alias
+  static const Color amber = Color(0xFFF59E0B); // Alias
+
+  // ===========================================================================
+  // 5. GRADIENTE OFICIAL DA MARCA
+  // ===========================================================================
+
+  /// "background: linear-gradient(135deg, #6a00ff 0%, #8b2ff7 100%);"
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [accent, brightPurple],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }

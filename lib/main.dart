@@ -35,6 +35,8 @@ import 'widgets/consentimento_dialog.dart';
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 const String _fcmTokenMobilePrefsKey = 'FCM_TOKEN_MOBILE';
+const String _vipAlertChannelId = 'emissao_vip_v8';
+const String _vipAlertSilentChannelId = 'emissao_vip_v8_silent';
 
 Future<void> _sincronizarTokenPushMobileAtual() async {
   if (kIsWeb) return;
@@ -177,11 +179,14 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       ),
     );
 
-final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = localNotif
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v7',
+        _vipAlertChannelId,
         'Alertas Sonoros VIP',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -192,7 +197,7 @@ final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFl
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v7_silent',
+        _vipAlertSilentChannelId,
         'Alertas Silenciosos (Cooldown)',
         importance: Importance.low,
         playSound: false,
@@ -202,8 +207,8 @@ final androidPlugin = localNotif.resolvePlatformSpecificImplementation<AndroidFl
 
     final bool somAtivo = prefs.getBool('SOUND_ENABLED') ?? true;
     final String idCanalReal = somAtivo
-        ? 'emissao_vip_v7'
-        : 'emissao_vip_v7_silent';
+        ? _vipAlertChannelId
+        : _vipAlertSilentChannelId;
 
     debugPrint(
       "🔔 [FCM-UX] Preparando Notificação ${somAtivo ? '🔊 SONORA' : '🔕 SILENCIOSA'} via canal: $idCanalReal",
@@ -289,11 +294,14 @@ void main() async {
     // Cria o canal AQUI, na thread principal, antes do runApp.
     // Android 13+ pode descartar notificações silenciosamente se o canal
     // for criado apenas no isolate do background handler.
-    final androidPlugin = flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v7',
+        _vipAlertChannelId,
         'Alertas Sonoros',
         importance: Importance.max,
         sound: RawResourceAndroidNotificationSound('alerta'),
@@ -305,7 +313,7 @@ void main() async {
     // 🔕 CANAL SILENCIOSO (Novo ID)
     await androidPlugin?.createNotificationChannel(
       const AndroidNotificationChannel(
-        'emissao_vip_v7_silent', // ID Diferente
+        _vipAlertSilentChannelId, // ID Diferente
         'Alertas Silenciosos',
         importance: Importance.low,
         playSound: false,
@@ -396,7 +404,7 @@ class MilhasAlertApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'PramilhaSVIP',
-      theme: ThemeData.dark().copyWith(
+      theme: ThemeData.light().copyWith(
         primaryColor: AppTheme.accent,
         scaffoldBackgroundColor: AppTheme.bg,
       ),
@@ -539,7 +547,7 @@ class _SplashRouterState extends State<SplashRouter>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppTheme.bg,
       body: AnimatedBuilder(
         animation: Listenable.merge([
           _ctrlLetterbox,
@@ -584,8 +592,8 @@ class _SplashRouterState extends State<SplashRouter>
 
   Widget _buildLogoIcon() {
     return Container(
-      width: 96,
-      height: 96,
+      width: kIsWeb ? 130 : 96,
+      height: kIsWeb ? 130 : 96,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         boxShadow: [
@@ -595,7 +603,7 @@ class _SplashRouterState extends State<SplashRouter>
             spreadRadius: _glowRadius.value * 0.3,
           ),
           BoxShadow(
-            color: Colors.white.withOpacity(0.08),
+            color: AppTheme.black.withOpacity(0.08),
             blurRadius: _glowRadius.value * 2,
           ),
         ],
@@ -622,14 +630,14 @@ class _SplashRouterState extends State<SplashRouter>
         Text(
           "PRAMILHAS",
           style: TextStyle(
-            color: Colors.white,
-            fontSize: 28,
+            color: AppTheme.black,
+            fontSize: kIsWeb ? 32 : 28,
             fontWeight: FontWeight.w900,
             letterSpacing: 6,
             shadows: [
               Shadow(
-                color: AppTheme.accent.withOpacity(0.4),
-                blurRadius: _glowRadius.value,
+                color: AppTheme.accent.withOpacity(0.3),
+                blurRadius: _glowRadius.value * 3,
               ),
             ],
           ),
@@ -638,8 +646,8 @@ class _SplashRouterState extends State<SplashRouter>
           "VIP",
           style: TextStyle(
             color: AppTheme.accent,
-            fontSize: 28,
-            fontWeight: FontWeight.w300,
+            fontSize: kIsWeb ? 32 : 28,
+            fontWeight: FontWeight.w900,
             letterSpacing: 6,
             shadows: [
               Shadow(
@@ -657,10 +665,10 @@ class _SplashRouterState extends State<SplashRouter>
     return Text(
       "RADAR DE EMISSÕES VIP",
       style: TextStyle(
-        color: Colors.white.withOpacity(0.35),
-        fontSize: 10,
+        color: AppTheme.text.withOpacity(0.6),
+        fontSize: kIsWeb ? 13 : 10,
         letterSpacing: 4,
-        fontWeight: FontWeight.w400,
+        fontWeight: FontWeight.w700,
       ),
     );
   }
@@ -672,13 +680,13 @@ class _SplashRouterState extends State<SplashRouter>
           top: _letterboxTop.value,
           left: 0,
           right: 0,
-          child: Container(height: 80, color: Colors.black),
+          child: Container(height: 80, color: AppTheme.bg),
         ),
         Positioned(
           bottom: _letterboxBottom.value,
           left: 0,
           right: 0,
-          child: Container(height: 80, color: Colors.black),
+          child: Container(height: 80, color: AppTheme.bg),
         ),
       ],
     );
@@ -689,7 +697,7 @@ class _SplashRouterState extends State<SplashRouter>
     return Positioned.fill(
       child: Opacity(
         opacity: _exitOpacity.value,
-        child: const ColoredBox(color: Colors.black),
+        child: const ColoredBox(color: AppTheme.bg),
       ),
     );
   }
@@ -699,7 +707,7 @@ class _DotGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Paint paint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
+      ..color = AppTheme.black.withOpacity(0.04)
       ..strokeCap = StrokeCap.round;
     const double spacing = 28.0;
     for (double x = 0; x < size.width; x += spacing) {
@@ -764,7 +772,7 @@ class _MainNavigatorState extends State<MainNavigator>
                     Text(
                       "Atenção à Bateria",
                       style: TextStyle(
-                        color: Colors.white,
+                        color: AppTheme.black,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -834,7 +842,7 @@ class _MainNavigatorState extends State<MainNavigator>
       body: corpo,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          somAtivo ? 'emissao_vip_v7' : 'emissao_vip_v7_silent',
+          somAtivo ? _vipAlertChannelId : _vipAlertSilentChannelId,
           'Emissões FãMilhasVIP',
           importance: somAtivo ? Importance.max : Importance.low,
           priority: Priority.high,
@@ -1498,7 +1506,7 @@ class _AlertsScreenState extends State<AlertsScreen>
               Text(
                 'Atualização necessária',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppTheme.black,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -1795,7 +1803,7 @@ class _AlertsScreenState extends State<AlertsScreen>
                 "FEED DE EMISSÕES",
                 style: TextStyle(
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
+                  color: AppTheme.black,
                   letterSpacing: 2,
                   fontSize: 18,
                 ),
@@ -2120,12 +2128,12 @@ class _AlertsScreenState extends State<AlertsScreen>
         message: tooltipMsg,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
+          color: AppTheme.surface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white12),
+          border: Border.all(color: AppTheme.border),
         ),
         textStyle: const TextStyle(
-          color: Colors.white,
+          color: AppTheme.text,
           fontSize: 12,
           fontWeight: FontWeight.bold,
         ),
@@ -2354,7 +2362,7 @@ class _AlertsScreenState extends State<AlertsScreen>
           },
         )
         .animate(onPlay: (controller) => controller.repeat())
-        .shimmer(duration: 1200.ms, color: Colors.white12);
+        .shimmer(duration: 1200.ms, color: AppTheme.black.withOpacity(0.12));
   }
 
   Widget _buildBody() {
@@ -2859,7 +2867,9 @@ class _AlertCardState extends State<AlertCard> {
     final Duration idadeDoAlerta = DateTime.now().difference(
       widget.alerta.data,
     );
-    Color corRelogio = AppTheme.muted;
+
+    // 🕒 Lógica do Relógio: se não for verde ou amarelo, usamos um branco fosco
+    Color corRelogio = Colors.white54;
 
     if (idadeDoAlerta.inMinutes < 60) {
       corRelogio = AppTheme.green;
@@ -2888,23 +2898,19 @@ class _AlertCardState extends State<AlertCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 🚀 UX: Long Press no Trecho para Copiar
-                // 🚀 UX: Long Press no Trecho para Copiar
                 GestureDetector(
                   onTap: () => _copiarTexto(trechoDisplay, "Trecho"),
                   onLongPress: () => _copiarTexto(trechoDisplay, "Trecho"),
-                  // 👇 Substitua a partir daqui! 👇
                   child: Text(
                     trechoDisplay,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      color: Colors.white,
+                      color: Colors.white, // 👈 TEXTO DO TRECHO EM BRANCO
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // 👆 Até aqui! 👆
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -2918,11 +2924,14 @@ class _AlertCardState extends State<AlertCard> {
                         letterSpacing: 1,
                       ),
                     ),
-                    const Text(" • ", style: TextStyle(color: AppTheme.muted)),
+                    const Text(
+                      " • ",
+                      style: TextStyle(color: Colors.white54),
+                    ), // 👈 SEPARADOR
                     Text(
                       "${widget.alerta.milhas} milhas",
                       style: const TextStyle(
-                        color: AppTheme.text,
+                        color: Colors.white70, // 👈 MILHAS EM BRANCO FOSCO
                         fontSize: 12.2,
                         fontWeight: FontWeight.w400,
                       ),
@@ -2955,7 +2964,7 @@ class _AlertCardState extends State<AlertCard> {
                 _isExpanded
                     ? Icons.keyboard_arrow_up
                     : Icons.keyboard_arrow_down,
-                color: AppTheme.muted,
+                color: Colors.white54, // 👈 SETINHA EM BRANCO FOSCO
                 size: 20,
               ),
             ],
@@ -3160,7 +3169,7 @@ class _AlertCardState extends State<AlertCard> {
   }
 
   Widget _buildInfoColumn(String titulo, String valor, {Color? corValor}) {
-    final Color corExibicao = corValor ?? Colors.white;
+    final Color corExibicao = corValor ?? Colors.white; // 👈 MUDOU AQUI
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -3169,7 +3178,7 @@ class _AlertCardState extends State<AlertCard> {
           Text(
             titulo,
             style: const TextStyle(
-              color: AppTheme.muted,
+              color: Colors.white54, // 👈 MUDOU AQUI
               fontSize: 10,
               letterSpacing: 1,
               fontWeight: FontWeight.w600,
@@ -3178,12 +3187,10 @@ class _AlertCardState extends State<AlertCard> {
           const SizedBox(height: 4),
           InkWell(
             onTap: () => _copiarTexto(valor, titulo),
-            onLongPress: () =>
-                _copiarTexto(valor, titulo), // 🚀 Adicionado Long Press também
+            onLongPress: () => _copiarTexto(valor, titulo),
             borderRadius: BorderRadius.circular(4),
             child: Padding(
               padding: const EdgeInsets.only(right: 12, top: 2, bottom: 2),
-              // 🚀 UX: Sem o ícone de cópia
               child: Text(
                 valor,
                 style: TextStyle(
@@ -3207,9 +3214,9 @@ class _AlertCardState extends State<AlertCard> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.3),
+        color: Colors.black.withOpacity(0.3), // 👈 MUDOU AQUI
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Colors.white10), // 👈 MUDOU AQUI
       ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -3218,7 +3225,7 @@ class _AlertCardState extends State<AlertCard> {
               ? widget.alerta.detalhes
               : widget.alerta.mensagem,
           style: const TextStyle(
-            color: AppTheme.text,
+            color: Colors.white, // 👈 MUDOU AQUI
             fontSize: 11,
             height: 1.4,
           ),
@@ -3627,7 +3634,7 @@ class _SmsScreenState extends State<SmsScreen> {
             "SMS",
             style: TextStyle(
               fontWeight: FontWeight.w900,
-              color: Colors.white,
+              color: AppTheme.black,
               letterSpacing: 2,
               fontSize: 20,
             ),
@@ -3662,7 +3669,7 @@ class _SmsScreenState extends State<SmsScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: AppTheme.black,
                 ),
               ),
               SizedBox(height: 10),
@@ -3712,7 +3719,10 @@ class _SmsScreenState extends State<SmsScreen> {
                 color: _isMonitoring ? AppTheme.green : AppTheme.muted,
               )
               .animate(target: _isMonitoring ? 1 : 0)
-              .shimmer(duration: 2.seconds, color: Colors.white24),
+              .shimmer(
+                duration: 2.seconds,
+                color: AppTheme.black.withOpacity(0.24),
+              ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -4047,7 +4057,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
             "SESSÃO",
             style: TextStyle(
               fontWeight: FontWeight.w900,
-              color: Colors.white,
+              color: AppTheme.black,
               letterSpacing: 2,
               fontSize: 20,
             ),
@@ -4123,7 +4133,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
               Text(
                 "Suporte VIP",
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppTheme.black,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -4323,7 +4333,7 @@ E-mail: $emailAtual
                   letterSpacing: 1.2,
                   color: isVerifying
                       ? AppTheme.accent
-                      : (_isBloqueado ? AppTheme.red : Colors.white),
+                      : (_isBloqueado ? AppTheme.red : AppTheme.black),
                 ),
               ),
             ],
@@ -4345,7 +4355,7 @@ E-mail: $emailAtual
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildInfoRow("USUÁRIO", _userUsuario, valueColor: Colors.white),
+          _buildInfoRow("USUÁRIO", _userUsuario, valueColor: AppTheme.black),
           const Divider(color: AppTheme.border, height: 30),
 
           // 🚀 AQUI ESTÁ A MUDANÇA: Substituímos o token pela nossa "Licença Fantasia"
@@ -4644,7 +4654,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             fontSize: 16,
             fontWeight: FontWeight.bold,
             letterSpacing: 1.5,
-            color: Colors.white,
+            color: AppTheme.black,
           ),
         ),
       ],
@@ -4693,7 +4703,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
       title: Text(
         label,
         style: const TextStyle(
-          color: Colors.white,
+          color: AppTheme.black,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -4896,7 +4906,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                           child: Text(
                             "🌍 Adicionar $regiao",
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: AppTheme.black,
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
                             ),
@@ -4939,7 +4949,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 Chip(
                   label: Text(
                     item,
-                    style: const TextStyle(fontSize: 12, color: Colors.white),
+                    style: const TextStyle(fontSize: 12, color: AppTheme.text),
                   ),
                   backgroundColor: AppTheme.card,
                   deleteIcon: const Icon(
@@ -4966,7 +4976,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                       label: Text(
                         "🔽 Ocultar $regiao",
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: AppTheme.text,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -4983,7 +4993,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                           aero,
                           style: const TextStyle(
                             fontSize: 12,
-                            color: Colors.white,
+                            color: AppTheme.text,
                           ),
                         ),
                         backgroundColor: AppTheme.card,
@@ -5004,7 +5014,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                       label: Text(
                         "🌍 Região: $regiao (${aeros.length})",
                         style: const TextStyle(
-                          color: Colors.white,
+                          color: AppTheme.text,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -5036,7 +5046,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                         aero,
                         style: const TextStyle(
                           fontSize: 12,
-                          color: Colors.white,
+                          color: AppTheme.text,
                         ),
                       ),
                       backgroundColor: AppTheme.card,
@@ -5087,7 +5097,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 return TextField(
                   controller: fieldTextEditingController,
                   focusNode: fieldFocusNode,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  style: const TextStyle(color: AppTheme.black, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: "Adicionar $titulo...",
                     hintStyle: const TextStyle(
@@ -5142,8 +5152,9 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                       width: MediaQuery.of(context).size.width - 40,
                       margin: const EdgeInsets.only(top: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
+                        color: AppTheme.surface,
                         borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.border),
                       ),
                       child: ListView.builder(
                         padding: EdgeInsets.zero,
@@ -5155,7 +5166,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                             title: Text(
                               option,
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: AppTheme.text,
                                 fontSize: 13,
                               ),
                             ),
