@@ -168,7 +168,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // 🚀 PASSO 4: EXIBIÇÃO DA NOTIFICAÇÃO NATIVO
   // =====================================================================
   debugPrint(
-    "🔔 [FCM-UX] Disparando Sirene Dourada e Notificação visual do Android...",
+    "🔔 [FCM-UX] Alerta aprovado. Solicitando notificação ao Android...",
   );
   try {
     final localNotif = FlutterLocalNotificationsPlugin();
@@ -192,6 +192,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         sound: RawResourceAndroidNotificationSound('alerta'),
         playSound: true,
         enableVibration: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
 
@@ -307,6 +308,7 @@ void main() async {
         sound: RawResourceAndroidNotificationSound('alerta'),
         playSound: true,
         enableVibration: true,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
       ),
     );
 
@@ -1201,33 +1203,46 @@ class _MainNavigatorState extends State<MainNavigator>
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: AppTheme.surface,
-        selectedItemColor: AppTheme.accent,
-        unselectedItemColor: AppTheme.muted,
-        currentIndex: _currentIndex,
-        onTap: (int index) {
-          // 🚀 UX: Lógica do "Double Tap" para Voltar ao Topo
-          if (_currentIndex == 0 && index == 0) {
-            if (_alertScrollController.hasClients) {
-              _alertScrollController.animateTo(
-                0, // 0 é o topo exato da tela
-                duration: const Duration(milliseconds: 600),
-                curve: Curves
-                    .easeOutCubic, // Animação super macia e desacelerada no final
-              );
-            }
-          }
-          setState(() => _currentIndex = index);
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.flight_takeoff),
-            label: "Alertas",
+      // 🚀 ENVOLVA O BOTTOM NAVIGATION COM UM CONTAINER:
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: AppTheme.border, // 👈 Usa o Lilás Pastel do seu tema
+              width: 0.5, // 👈 Largura "fio de cabelo"
+            ),
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.badge), label: "Licença"),
-          BottomNavigationBarItem(icon: Icon(Icons.sms), label: "SMS"),
-        ],
+        ),
+        child: BottomNavigationBar(
+          backgroundColor: AppTheme.card,
+          elevation:
+              0, // 👈 IMPORTANTE: Zere a elevação aqui para a borda brilhar
+          selectedItemColor: AppTheme.accent,
+          unselectedItemColor: AppTheme.muted,
+          currentIndex: _currentIndex,
+          onTap: (int index) {
+            // 🚀 UX: Lógica do "Double Tap" para Voltar ao Topo
+            if (_currentIndex == 0 && index == 0) {
+              if (_alertScrollController.hasClients) {
+                _alertScrollController.animateTo(
+                  0, // 0 é o topo exato da tela
+                  duration: const Duration(milliseconds: 600),
+                  curve: Curves
+                      .easeOutCubic, // Animação super macia e desacelerada no final
+                );
+              }
+            }
+            setState(() => _currentIndex = index);
+          },
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.flight_takeoff),
+              label: "Alertas",
+            ),
+            BottomNavigationBarItem(icon: Icon(Icons.badge), label: "Licença"),
+            BottomNavigationBarItem(icon: Icon(Icons.sms), label: "SMS"),
+          ],
+        ),
       ),
     );
   }
@@ -1791,6 +1806,11 @@ class _AlertsScreenState extends State<AlertsScreen>
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       centerTitle: true,
+      elevation: 1,
+      shadowColor: AppTheme.border.withOpacity(
+        0.5,
+      ), // 👈 Define a cor da sombra (lilás pastel)
+      backgroundColor: AppTheme.card, // Garante que o fundo seja branco puro
       title: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

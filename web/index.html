@@ -2,12 +2,12 @@
 <html>
 
 <head>
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/">
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="PramilhasVIP — Radar de Emissões">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="PramilhaSVIP">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="icon" type="image/png" href="favicon.png" />
@@ -15,7 +15,7 @@
   <link rel="manifest" href="manifest.json">
 
   <style>
-    /* Tela de loading que aparece IMEDIATAMENTE enquanto o Flutter carrega */
+    /* 🚀 ESTÉTICA PURPLE LIGHT - IDENTIDADE 2026 */
     * {
       margin: 0;
       padding: 0;
@@ -23,8 +23,8 @@
     }
 
     body {
-      background-color: #000000;
-      /* Igual ao backgroundColor: Colors.black do SplashRouter */
+      background-color: #F8F5FF;
+      /* AppTheme.bg */
       overflow: hidden;
       display: flex;
       justify-content: center;
@@ -39,7 +39,8 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      background-color: #000000;
+      background-color: #F8F5FF;
+      /* AppTheme.bg */
       z-index: 9999;
       opacity: 1;
       transition: opacity 0.5s ease-out;
@@ -50,22 +51,22 @@
       pointer-events: none;
     }
 
-    /* _DotGridPainter recriado em CSS */
+    /* Pontos agora são escuros no fundo claro */
     .dot-grid {
       position: absolute;
       inset: 0;
-      background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1.2px, transparent 1.2px);
+      background-image: radial-gradient(rgba(0, 0, 0, 0.04) 1.2px, transparent 1.2px);
       background-size: 28px 28px;
       z-index: 0;
     }
 
-    /* Barras de Letterbox do _SplashRouterState */
+    /* Barras de Letterbox agora usam a cor de fundo */
     .letterbox {
       position: absolute;
       left: 0;
       right: 0;
       height: 80px;
-      background: #000000;
+      background: #F8F5FF;
       z-index: 1;
     }
 
@@ -99,14 +100,12 @@
       }
     }
 
-    /* Conteúdo Central e Efeito de Escala (Tween _logoScale / _logoOpacity) */
     .center-content {
       position: relative;
       z-index: 2;
       display: flex;
       flex-direction: column;
       align-items: center;
-      /* Entra crescendo do scale 0.82 para 1.0 exatamente como no Dart */
       animation: scaleIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
     }
 
@@ -122,13 +121,14 @@
       }
     }
 
-    /* Animação do Glow (Shadow Radius) + Círculo do Logo */
+    /* Glow Roxo Suave */
     .logo-container {
-      width: 96px;
-      height: 96px;
+      width: 130px;
+      /* Seguindo a recomendação de BOLD para Web */
+      height: 130px;
       border-radius: 50%;
-      background: rgba(56, 189, 248, 0.15);
-      /* AppTheme.accent com opacidade */
+      background: rgba(106, 0, 255, 0.1);
+      /* AppTheme.accent 10% */
       display: flex;
       align-items: center;
       justify-content: center;
@@ -145,45 +145,48 @@
 
     @keyframes pulseGlow {
       0% {
-        box-shadow: 0 0 8px rgba(56, 189, 248, 0.5), 0 0 16px rgba(255, 255, 255, 0.04);
+        box-shadow: 0 0 10px rgba(106, 0, 255, 0.4), 0 0 20px rgba(0, 0, 0, 0.02);
       }
 
       100% {
-        box-shadow: 0 0 36px rgba(56, 189, 248, 0.7), 0 0 72px rgba(255, 255, 255, 0.08);
+        box-shadow: 0 0 40px rgba(106, 0, 255, 0.6), 0 0 80px rgba(0, 0, 0, 0.05);
       }
     }
 
-    /* Textos idênticos ao do Flutter */
+    /* Tipografia Bold e Contraste Máximo */
     .brand {
-      color: white;
-      font-size: 28px;
+      color: #000000;
+      /* AppTheme.black */
+      font-size: 32px;
       font-weight: 900;
       letter-spacing: 6px;
-      text-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
       display: flex;
       align-items: baseline;
     }
 
     .brand span {
-      color: #38BDF8;
+      color: #6A00FF;
       /* AppTheme.accent */
-      font-weight: 300;
-      text-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
+      font-weight: 900;
+      /* BOLD TOTAL na Web */
+      text-shadow: 0 0 25px rgba(106, 0, 255, 0.5);
     }
 
     .tagline {
-      color: rgba(255, 255, 255, 0.35);
-      font-size: 10px;
+      color: rgba(51, 51, 51, 0.6);
+      /* AppTheme.text com opacidade */
+      font-size: 13px;
       letter-spacing: 4px;
-      font-weight: 400;
+      font-weight: 700;
       margin-top: 10px;
     }
 
-    /* Progresso sutil vip para dar feedback no web */
+    /* Loader Line Roxo Elétrico */
     .vip-loader-line {
-      width: 140px;
-      height: 1px;
-      background: rgba(255, 255, 255, 0.1);
+      width: 160px;
+      height: 2px;
+      background: #E8E0FF;
+      /* AppTheme.border */
       margin-top: 36px;
       position: relative;
       overflow: hidden;
@@ -197,8 +200,9 @@
       top: 0;
       height: 100%;
       width: 40%;
-      background: #38BDF8;
-      box-shadow: 0 0 10px #38BDF8;
+      background: #6A00FF;
+      /* AppTheme.accent */
+      box-shadow: 0 0 15px #6A00FF;
       animation: sweepLine 1.5s ease-in-out infinite;
     }
 
@@ -215,7 +219,6 @@
 </head>
 
 <body>
-
   <div id="loading-screen">
     <div class="dot-grid"></div>
     <div class="letterbox top"></div>
@@ -223,24 +226,19 @@
 
     <div class="center-content">
       <div class="logo-container">
-        <!-- Exibe o ícone normal, se der erro mostra fallback como no Flutter -->
         <img src="icons/Icon-192.png" alt="Logo" onerror="this.style.display='none'">
       </div>
       <div class="brand">PRAMILHAS<span>VIP</span></div>
       <div class="tagline">RADAR DE EMISSÕES VIP</div>
-
-      <!-- Linha minimalista de carregamento -->
       <div class="vip-loader-line"></div>
     </div>
   </div>
 
   <script>
-    // Remove a tela de loading quando o Flutter terminar de montar
     window.addEventListener('flutter-first-frame', function () {
       const screen = document.getElementById('loading-screen');
       if (screen) {
         screen.classList.add('hidden');
-        // Dá o tempo da animação de opacidade para remover do DOM
         setTimeout(() => screen.remove(), 500);
       }
     });
@@ -251,13 +249,11 @@
           updateViaCache: 'none'
         }).then(reg => {
           console.log('✅ Service Worker VIP pronto!');
-          reg.update(); // Força a busca por atualizações
+          reg.update();
         });
       });
     }
   </script>
-
-
 
   <script src="flutter_bootstrap.js" async></script>
 </body>

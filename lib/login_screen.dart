@@ -170,18 +170,28 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildLogo() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
       children: [
-        const Icon(Icons.radar, color: AppTheme.accent, size: 40),
+        // Ícone reduzido ligeiramente para alinhar melhor com o texto
+        const Icon(Icons.radar, color: AppTheme.accent, size: 36),
         const SizedBox(width: 12),
         Text(
           "PRAMILHAS",
           style: TextStyle(
             fontFamily: 'Inter',
-            fontSize: 40,
+            fontSize: 32,
             fontWeight: FontWeight.w900,
-            color:AppTheme.black,
+            letterSpacing: 4,
+            color: AppTheme.black,
+            // 🚀 Na letra preta, a sombra tem que ser BEM mais leve e espalhada
             shadows: [
-              Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20),
+              Shadow(
+                color: AppTheme.accent.withValues(
+                  alpha: 0.15,
+                ), // 👈 Troquei aqui
+                blurRadius: 15,
+              ),
             ],
           ),
         ),
@@ -189,11 +199,13 @@ class _LoginScreenState extends State<LoginScreen> {
           "VIP",
           style: TextStyle(
             fontFamily: 'Inter',
-            fontSize: 40,
-            fontWeight: FontWeight.w300,
+            fontSize: 32,
+            fontWeight: FontWeight.w900, // 🚀 BOLD TOTAL (Igual à Splash)
+            letterSpacing: 4,
             color: AppTheme.accent,
+            // 🚀 Na letra roxa, a sombra pode ser um pouco mais forte para o "Glow"
             shadows: [
-              Shadow(color: AppTheme.accent.withOpacity(0.5), blurRadius: 20),
+              Shadow(color: AppTheme.accent.withOpacity(0.4), blurRadius: 20),
             ],
           ),
         ),
@@ -312,7 +324,7 @@ class _LoginScreenState extends State<LoginScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           elevation: 10,
-          shadowColor: AppTheme.accent.withOpacity(0.3),
+          shadowColor: AppTheme.accent.withValues(alpha: 0.3),
         ),
         onPressed: _isLoading
             ? null
